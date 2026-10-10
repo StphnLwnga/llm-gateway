@@ -1,0 +1,66 @@
+# Local stack: Postgres, a one-shot migration, then the gateway.
+# Run from the repo root with `make up`. Local use only: the default password
+# below is for a laptop, never for a shared or deployed database.
+
+name: llm-gateway
+
+x-gateway-image: &gateway-image
+  image: llm-gateway:local
+  build:
+    context: ..
+    dockerfile: deploy/docker/Dockerfile
+
+x-database-url: &database-url
+  DATABASE_URL: postgres://gateway:${POSTGRES_PASSWORD:-gateway-local}@postgres:5432/gateway?sslmode=disable
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.7-pg18-trixie
+    environment:
+      POSTGRES_USER: gateway
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gateway-local}
+      POSTGRES_DB: gateway
+    volumes:
+      # Postgres 18 images keep data in /var/lib/postgresql/18/docker (one
+      # directory per major version) and declare /var/lib/postgresql as the
+      # volume. A volume on the old /var/lib/postgresql/data path makes the
+      # entrypoint refuse to start (docker-library/postgres pull 1259).
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gateway -d gateway"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+    mem_limit: 512m
+
+  migrate:
+    <<: *gateway-image
+    entrypoint: ["/usr/local/bin/gatewayctl"]
+    command: ["migrate", "up"]
+    environment:
+      <<: *database-url
+      LOG_FORMAT: text
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    mem_limit: 64m
+
+  gateway:
+    <<: *gateway-image
+    environment:
+      <<: *database-url
+      LOG_FORMAT: text
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DB_MAX_CONNS: ${DB_MAX_CONNS:-10}
+      DRAIN_DELAY: ${DRAIN_DELAY:-0s}
+      SHUTDOWN_TIMEOUT: ${SHUTDOWN_TIMEOUT:-20s}
+    ports:
+      - "8080:8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    mem_limit: 128m
+
+volumes:
+  pgdata:
