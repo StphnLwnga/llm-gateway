@@ -1,6 +1,8 @@
 package config
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -119,5 +121,59 @@ func TestSecretIsRedactedWhenPrinted(t *testing.T) {
 	}
 	if string(s) != "postgres://gw:hunter2@db/gateway" {
 		t.Error("an explicit conversion must still return the value")
+	}
+}
+
+// TestSecretIsRedactedOutsideFmt goes through the real slog handlers and
+// encoding/json. Each package checks only its own hook, so the fmt tests
+// above do not prove these paths.
+func TestSecretIsRedactedOutsideFmt(t *testing.T) {
+	t.Parallel()
+	const raw = "postgres://gw:hunter2@db/gateway"
+	s := Secret(raw)
+	holder := struct{ DatabaseURL Secret }{s}
+
+	logWith := func(newHandler func(*bytes.Buffer) slog.Handler, args ...any) string {
+		var buf bytes.Buffer
+		slog.New(newHandler(&buf)).Info("config loaded", args...)
+		return buf.String()
+	}
+	jsonHandler := func(b *bytes.Buffer) slog.Handler { return slog.NewJSONHandler(b, nil) }
+	textHandler := func(b *bytes.Buffer) slog.Handler { return slog.NewTextHandler(b, nil) }
+	marshalled, err := json.Marshal(holder)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+
+	cases := []struct {
+		name string
+		out  string
+	}{
+		{"slog JSON handler, Secret as an attr", logWith(jsonHandler, "database_url", s)},
+		{"slog JSON handler, struct holding a Secret", logWith(jsonHandler, "config", holder)},
+		{"slog text handler, Secret as an attr", logWith(textHandler, "database_url", s)},
+		{"slog text handler, struct holding a Secret", logWith(textHandler, "config", holder)},
+		{"json.Marshal of a struct holding a Secret", string(marshalled)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if strings.Contains(tc.out, "hunter2") {
+				t.Errorf("output contains the raw value: %s", tc.out)
+			}
+			if !strings.Contains(tc.out, "[redacted]") {
+				t.Errorf("output is missing [redacted]: %s", tc.out)
+			}
+		})
+	}
+}
+
+// TestSecretResolvesToPlaceholderInSlog pins the path any slog handler takes,
+// including third-party handlers that never call MarshalText: slog resolves
+// a LogValuer before the handler sees the value.
+func TestSecretResolvesToPlaceholderInSlog(t *testing.T) {
+	t.Parallel()
+	v := slog.AnyValue(Secret("hunter2")).Resolve()
+	if v.Kind() != slog.KindString || v.String() != "[redacted]" {
+		t.Errorf("resolved value = %v (kind %v), want the string [redacted]", v, v.Kind())
 	}
 }

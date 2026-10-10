@@ -22,8 +22,22 @@ func (s Secret) String() string {
 }
 
 // Format implements fmt.Formatter, so every verb, including %d and %x, prints the placeholder.
+// Only package fmt calls it; slog's JSON handler and encoding/json do not.
 func (s Secret) Format(f fmt.State, verb rune) {
 	io.WriteString(f, s.String())
+}
+
+// LogValue implements slog.LogValuer. Package log/slog calls it when it resolves
+// an attribute, before any handler sees the value, so every handler gets the placeholder.
+func (s Secret) LogValue() slog.Value {
+	return slog.StringValue(s.String())
+}
+
+// MarshalText implements encoding.TextMarshaler. Package encoding/json calls it,
+// including for a Secret inside a struct that slog's JSON handler marshals, and
+// slog's text handler calls it for values it does not format itself.
+func (s Secret) MarshalText() ([]byte, error) {
+	return []byte(s.String()), nil
 }
 
 // Log output formats accepted by LOG_FORMAT.
