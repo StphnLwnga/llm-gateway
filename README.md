@@ -6,6 +6,22 @@ Status: S0 (walking skeleton) in progress.
 
 Design: [docs/design.md](docs/design.md).
 
+## Run locally
+
+Needs Docker with Compose.
+
+```bash
+make up                              # build the image; start Postgres, run migrations, start the gateway
+curl -i localhost:8080/readyz        # 200 {"status":"ready"} once Postgres answers
+make logs                            # follow the gateway's logs
+make migrate-status                  # list migrations and whether each is applied
+make down                            # stop the stack; the Postgres volume is kept
+```
+
+`make test` runs every test. The Postgres integration tests start a throwaway container with testcontainers, so they need Docker. Without Docker they skip locally, and fail when `CI` is set.
+
+Migrations run as a separate one-shot step (`gatewayctl migrate up`), never when the gateway starts. The gateway starts even when Postgres is down; `/readyz` returns 503 until Postgres answers.
+
 ## Endpoints
 
 | Method and path | What it does |
@@ -24,10 +40,12 @@ This 404 body matches OpenAI's own. A `500` returns a fixed message and never th
 
 ## Configuration
 
-Settings come from environment variables. Every invalid setting is reported together at startup, and the gateway exits with code 1.
+Settings come from environment variables. Both binaries, `gateway` and `gatewayctl`, read the same settings. Every invalid setting is reported together at startup, and the gateway exits with code 1.
 
 | Variable | Default | Accepted values |
 |---|---|---|
+| `DATABASE_URL` | none, required | A Postgres connection string, for example `postgres://user:password@host:5432/db`. Never printed or logged. |
+| `DB_MAX_CONNS` | `10` | A whole number of 1 or more: the most connections the pool opens |
 | `PORT` | `8080` | A number from 1 to 65535 |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
 | `LOG_FORMAT` | `json` | `json` or `text` |
@@ -37,3 +55,16 @@ Settings come from environment variables. Every invalid setting is reported toge
 ## Shutdown
 
 On SIGINT or SIGTERM the gateway marks itself as draining (`/readyz` returns 503), waits `DRAIN_DELAY`, stops accepting connections, and gives in-flight requests up to `SHUTDOWN_TIMEOUT` to finish. A signal never cancels a request that is already running; only the timeout does.
+
+## Project layout
+
+```text
+cmd/gateway/                 the HTTP server: composition root, graceful shutdown
+cmd/gatewayctl/              one-shot admin commands: migrate up, down, status
+internal/config/             settings parsed into typed values; Secret redaction
+internal/httpapi/            routes, readiness checks, the OpenAI error shape, server timeouts
+internal/store/postgres/     the connection pool, the readiness check, embedded migrations
+internal/telemetry/          the structured logger
+deploy/docker/Dockerfile     two-stage build into a distroless, non-root image
+deploy/compose.yaml          the local stack: Postgres (pgvector), migrate, gateway
+```
