@@ -21,3 +21,19 @@ Every error uses the OpenAI error shape. An unknown route returns `404`, and a k
 ```
 
 A `500` never returns the internal error text; the gateway logs it instead.
+
+## Configuration
+
+Settings come from environment variables. Every invalid setting is reported together at startup, and the gateway exits with code 1.
+
+| Variable | Default | Accepted values |
+|---|---|---|
+| `PORT` | `8080` | A number from 1 to 65535 |
+| `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
+| `LOG_FORMAT` | `json` | `json` or `text` |
+| `DRAIN_DELAY` | `0s` | A Go duration of 0 or more, for example `5s`. After SIGTERM, how long `/readyz` returns 503 while the server still serves, so the load balancer stops sending traffic. |
+| `SHUTDOWN_TIMEOUT` | `20s` | A Go duration of 0 or more. How long in-flight requests get to finish after the drain. Keep `DRAIN_DELAY` plus `SHUTDOWN_TIMEOUT` below the Kubernetes grace period (30s by default). |
+
+## Shutdown
+
+On SIGINT or SIGTERM the gateway marks itself as draining (`/readyz` returns 503), waits `DRAIN_DELAY`, stops accepting connections, and gives in-flight requests up to `SHUTDOWN_TIMEOUT` to finish. A signal never cancels a request that is already running; only the timeout does.

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 )
 
 // env returns a lookup backed by a map. It stands in for the process environment.
@@ -32,6 +33,12 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	if cfg.LogFormat != FormatJSON {
 		t.Errorf("LogFormat = %q, want %q", cfg.LogFormat, FormatJSON)
 	}
+	if cfg.DrainDelay != 0 {
+		t.Errorf("DrainDelay = %v, want 0s", cfg.DrainDelay)
+	}
+	if cfg.ShutdownTimeout != 20*time.Second {
+		t.Errorf("ShutdownTimeout = %v, want 20s", cfg.ShutdownTimeout)
+	}
 }
 
 func TestLoadParsesValidSettings(t *testing.T) {
@@ -51,6 +58,31 @@ func TestLoadParsesValidSettings(t *testing.T) {
 	}
 }
 
+func TestLoadParsesDurations(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		drain, shutdown         string
+		wantDrain, wantShutdown time.Duration
+	}{
+		{"0s", "0s", 0, 0},
+		{"5s", "20s", 5 * time.Second, 20 * time.Second},
+		{"500ms", "1m30s", 500 * time.Millisecond, 90 * time.Second},
+	}
+	for _, tc := range cases {
+		t.Run(tc.drain+"/"+tc.shutdown, func(t *testing.T) {
+			t.Parallel()
+			cfg, err := Load(env(map[string]string{"DRAIN_DELAY": tc.drain, "SHUTDOWN_TIMEOUT": tc.shutdown}))
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if cfg.DrainDelay != tc.wantDrain || cfg.ShutdownTimeout != tc.wantShutdown {
+				t.Errorf("DrainDelay, ShutdownTimeout = %v, %v; want %v, %v",
+					cfg.DrainDelay, cfg.ShutdownTimeout, tc.wantDrain, tc.wantShutdown)
+			}
+		})
+	}
+}
+
 func TestLoadRejectsInvalidSettings(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -67,6 +99,11 @@ func TestLoadRejectsInvalidSettings(t *testing.T) {
 		{"log level set but empty", map[string]string{"LOG_LEVEL": ""}, "LOG_LEVEL"},
 		{"unknown log format", map[string]string{"LOG_FORMAT": "yaml"}, "LOG_FORMAT"},
 		{"log format set but empty", map[string]string{"LOG_FORMAT": ""}, "LOG_FORMAT"},
+		{"drain delay without a unit", map[string]string{"DRAIN_DELAY": "5"}, "DRAIN_DELAY"},
+		{"drain delay negative", map[string]string{"DRAIN_DELAY": "-1s"}, "DRAIN_DELAY"},
+		{"drain delay set but empty", map[string]string{"DRAIN_DELAY": ""}, "DRAIN_DELAY"},
+		{"shutdown timeout not a duration", map[string]string{"SHUTDOWN_TIMEOUT": "soon"}, "SHUTDOWN_TIMEOUT"},
+		{"shutdown timeout negative", map[string]string{"SHUTDOWN_TIMEOUT": "-20s"}, "SHUTDOWN_TIMEOUT"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

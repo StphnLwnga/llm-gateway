@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Secret holds a sensitive value. It prints as [redacted], or [not set] when empty, under every fmt verb.
@@ -51,6 +52,15 @@ type Config struct {
 	Port      int
 	LogLevel  slog.Level
 	LogFormat string // FormatJSON or FormatText
+
+	// DrainDelay is how long the server keeps serving, with /readyz at 503, after
+	// SIGTERM and before it stops accepting connections. It gives the load balancer
+	// time to stop sending new requests. Kubernetes sets about 5s (S8).
+	DrainDelay time.Duration
+	// ShutdownTimeout bounds how long in-flight requests get to finish after the
+	// drain. DrainDelay plus ShutdownTimeout must stay below Kubernetes' 30s
+	// grace period, or SIGKILL cuts the shutdown short.
+	ShutdownTimeout time.Duration
 }
 
 // Addr is the listen address for the HTTP server.
@@ -97,6 +107,17 @@ func Load(lookup func(key string) (string, bool)) (Config, error) {
 	if cfg.LogFormat != FormatJSON && cfg.LogFormat != FormatText {
 		errs = append(errs, fmt.Errorf("LOG_FORMAT %q: must be json or text", cfg.LogFormat))
 	}
+
+	duration := func(key, def string) time.Duration {
+		raw := get(key, def)
+		d, err := time.ParseDuration(raw)
+		if err != nil || d < 0 {
+			errs = append(errs, fmt.Errorf("%s %q: must be a duration of 0 or more, for example 5s", key, raw))
+		}
+		return d
+	}
+	cfg.DrainDelay = duration("DRAIN_DELAY", "0s")
+	cfg.ShutdownTimeout = duration("SHUTDOWN_TIMEOUT", "20s")
 
 	if err := errors.Join(errs...); err != nil {
 		return Config{}, err

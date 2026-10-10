@@ -2,8 +2,11 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
+	"net"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -31,23 +34,45 @@ func TestRunFailsOnInvalidConfig(t *testing.T) {
 	}
 }
 
-func TestRunLogsTheLoadedConfig(t *testing.T) {
+// freePort returns a loopback port that was free a moment ago.
+func freePort(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+	return strconv.Itoa(ln.Addr().(*net.TCPAddr).Port)
+}
+
+func TestRunLogsTheLoadedConfigAndStopsOnCancel(t *testing.T) {
 	t.Parallel()
+	port := freePort(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel() // already "signalled": run starts, then shuts down at once
+
 	var stdout bytes.Buffer
-	err := run(t.Context(), env(map[string]string{"PORT": "9090", "LOG_LEVEL": "debug"}), &stdout, io.Discard)
+	err := run(ctx, env(map[string]string{"PORT": port, "LOG_LEVEL": "debug"}), &stdout, io.Discard)
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
+	first, _, _ := bytes.Cut(stdout.Bytes(), []byte("\n"))
 	var rec struct {
 		Msg       string  `json:"msg"`
 		Port      float64 `json:"port"`
 		LogLevel  string  `json:"log_level"`
 		LogFormat string  `json:"log_format"`
 	}
-	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &rec); err != nil {
-		t.Fatalf("output is not one JSON line: %v\n%s", err, stdout.String())
+	if err := json.Unmarshal(first, &rec); err != nil {
+		t.Fatalf("first line is not JSON: %v\n%s", err, stdout.String())
 	}
-	if rec.Msg != "config loaded" || rec.Port != 9090 || rec.LogLevel != "DEBUG" || rec.LogFormat != "json" {
-		t.Errorf("record = %+v, want config loaded, port 9090, DEBUG, json", rec)
+	wantPort, _ := strconv.Atoi(port)
+	if rec.Msg != "config loaded" || int(rec.Port) != wantPort || rec.LogLevel != "DEBUG" || rec.LogFormat != "json" {
+		t.Errorf("record = %+v, want config loaded, port %d, DEBUG, json", rec, wantPort)
+	}
+	for _, want := range []string{`"msg":"listening"`, `"msg":"shutdown complete"`} {
+		if !bytes.Contains(stdout.Bytes(), []byte(want)) {
+			t.Errorf("output is missing %s:\n%s", want, stdout.String())
+		}
 	}
 }
