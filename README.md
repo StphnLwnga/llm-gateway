@@ -17,10 +17,10 @@ Design: [docs/design.md](docs/design.md).
 Every error uses the OpenAI error shape. An unknown route returns `404`, and a known path with the wrong method returns `405` with an `Allow` header:
 
 ```json
-{"error":{"message":"not found: invalid URL (GET /v1/nope)","type":"invalid_request_error","param":null,"code":"not_found"}}
+{"error":{"message":"Invalid URL (GET /v1/nope)","type":"invalid_request_error","param":null,"code":null}}
 ```
 
-A `500` never returns the internal error text; the gateway logs it instead.
+This 404 body matches OpenAI's own. A `500` returns a fixed message and never the internal error text; the gateway logs the full error instead.
 
 ## Configuration
 

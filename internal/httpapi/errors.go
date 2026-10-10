@@ -26,31 +26,55 @@ type errorBody struct {
 	Code    *string `json:"code"`
 }
 
-// classify maps an error to its HTTP status, OpenAI error type and code.
+// apiError pairs an internal error with the exact message the client sees.
+// The handler writes the public message; the internal chain stays for
+// classify (errors.Is on the sentinel) and for the log.
+type apiError struct {
+	err error
+	msg string
+}
+
+func (e *apiError) Error() string { return e.err.Error() }
+func (e *apiError) Unwrap() error { return e.err }
+
+// publicError returns err with msg as the only text the client sees.
+func publicError(err error, msg string) error {
+	return &apiError{err: err, msg: msg}
+}
+
+// classify maps an error to its HTTP status and OpenAI error type.
 // An error it does not know is a 500.
-func classify(err error) (status int, errType, code string) {
+func classify(err error) (status int, errType string) {
 	switch {
 	case errors.Is(err, ErrNotFound):
-		return http.StatusNotFound, "invalid_request_error", "not_found"
+		return http.StatusNotFound, "invalid_request_error"
 	case errors.Is(err, ErrMethodNotAllowed):
-		return http.StatusMethodNotAllowed, "invalid_request_error", "method_not_allowed"
+		return http.StatusMethodNotAllowed, "invalid_request_error"
 	default:
-		return http.StatusInternalServerError, "server_error", "internal_error"
+		return http.StatusInternalServerError, "server_error"
 	}
 }
 
-// writeError writes err in the OpenAI error shape. A 4xx message is written for
-// the client, so it is sent as is. A 5xx message can hold internal detail
-// (hosts, SQL, upstream bodies), so the client gets a fixed text and the log gets err.
+// serverErrorMessage is the only text a client sees for a 5xx. The real error
+// can hold internal detail (hosts, SQL, upstream bodies), so it goes to the log.
+const serverErrorMessage = "The server had an error while processing your request."
+
+// writeError writes err in the OpenAI error shape. The client message is the
+// one set with publicError, never err.Error(): a wrapped chain can carry
+// internal detail. A 4xx with no public message gets the status text.
 func writeError(w http.ResponseWriter, r *http.Request, log *slog.Logger, err error) {
-	status, errType, code := classify(err)
-	msg := err.Error()
+	status, errType := classify(err)
+	msg := http.StatusText(status)
+	var ae *apiError
+	if errors.As(err, &ae) {
+		msg = ae.msg
+	}
 	if status >= http.StatusInternalServerError {
 		log.ErrorContext(r.Context(), "request failed",
 			"method", r.Method, "path", r.URL.Path, "status", status, "err", err)
-		msg = "The server had an error while processing your request."
+		msg = serverErrorMessage
 	}
-	writeJSON(w, status, errorEnvelope{Error: errorBody{Message: msg, Type: errType, Code: &code}})
+	writeJSON(w, status, errorEnvelope{Error: errorBody{Message: msg, Type: errType}})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

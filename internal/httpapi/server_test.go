@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -122,12 +123,11 @@ func TestUnknownRouteIs404InTheOpenAIShape(t *testing.T) {
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("GET /v1/nope = %d, want 404", rec.Code)
 	}
-	body := decodeError(t, rec)
-	if body.Type != "invalid_request_error" || body.Code == nil || *body.Code != "not_found" {
-		t.Errorf("error = %+v, want type invalid_request_error, code not_found", body)
-	}
-	if !strings.Contains(body.Message, "/v1/nope") {
-		t.Errorf("message %q does not name the path", body.Message)
+	decodeError(t, rec)
+	// OpenAI's own body for an unknown URL, with the method and path swapped in.
+	want := `{"error":{"message":"Invalid URL (GET /v1/nope)","type":"invalid_request_error","param":null,"code":null}}`
+	if got := strings.TrimSpace(rec.Body.String()); got != want {
+		t.Errorf("body =\n%s\nwant\n%s", got, want)
 	}
 }
 
@@ -140,29 +140,69 @@ func TestWrongMethodIs405InTheOpenAIShape(t *testing.T) {
 	if allow := rec.Header().Get("Allow"); allow != http.MethodGet {
 		t.Errorf("Allow = %q, want GET", allow)
 	}
-	decodeError(t, rec)
+	body := decodeError(t, rec)
+	if body.Message != "Not allowed to POST on /v1/models. Use GET." || body.Type != "invalid_request_error" || body.Code != nil {
+		t.Errorf("error = %+v, want the method message, type invalid_request_error, code null", body)
+	}
+}
+
+func TestClientMessageNeverComesFromTheErrorChain(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		err     error
+		wantMsg string
+	}{
+		{"public message set", publicError(fmt.Errorf("route lookup in table v3: %w", ErrNotFound), "Invalid URL (GET /x)"), "Invalid URL (GET /x)"},
+		{"4xx without a public message", fmt.Errorf("route lookup in table v3: %w", ErrNotFound), "Not Found"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			rec := httptest.NewRecorder()
+			writeError(rec, httptest.NewRequest(http.MethodGet, "/x", nil), discard, tc.err)
+			if rec.Code != http.StatusNotFound {
+				t.Errorf("status = %d, want 404: classify must still see the sentinel", rec.Code)
+			}
+			if body := decodeError(t, rec); body.Message != tc.wantMsg {
+				t.Errorf("message = %q, want %q", body.Message, tc.wantMsg)
+			}
+		})
+	}
 }
 
 func TestServerErrorHidesTheInternalText(t *testing.T) {
 	t.Parallel()
-	var logged strings.Builder
-	log := slog.New(slog.NewTextHandler(&logged, nil))
 	internal := errors.New("dial tcp 10.0.0.7:5432: connection refused")
+	cases := []struct {
+		name string
+		err  error
+	}{
+		{"plain internal error", internal},
+		{"internal error with a public message", publicError(internal, "database 10.0.0.7 is down")},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var logged strings.Builder
+			log := slog.New(slog.NewTextHandler(&logged, nil))
+			rec := httptest.NewRecorder()
+			writeError(rec, httptest.NewRequest(http.MethodGet, "/v1/models", nil), log, tc.err)
 
-	rec := httptest.NewRecorder()
-	writeError(rec, httptest.NewRequest(http.MethodGet, "/v1/models", nil), log, internal)
-
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want 500", rec.Code)
-	}
-	if strings.Contains(rec.Body.String(), "10.0.0.7") {
-		t.Errorf("the 500 body leaked the internal error: %s", rec.Body.String())
-	}
-	if body := decodeError(t, rec); body.Type != "server_error" {
-		t.Errorf("type = %q, want server_error", body.Type)
-	}
-	if !strings.Contains(logged.String(), "10.0.0.7") {
-		t.Errorf("the internal error was not logged: %s", logged.String())
+			if rec.Code != http.StatusInternalServerError {
+				t.Fatalf("status = %d, want 500", rec.Code)
+			}
+			if strings.Contains(rec.Body.String(), "10.0.0.7") {
+				t.Errorf("the 500 body leaked internal detail: %s", rec.Body.String())
+			}
+			body := decodeError(t, rec)
+			if body.Type != "server_error" || body.Message != serverErrorMessage || body.Code != nil {
+				t.Errorf("error = %+v, want server_error, the fixed message, code null", body)
+			}
+			if !strings.Contains(logged.String(), "dial tcp 10.0.0.7:5432") {
+				t.Errorf("the internal chain was not logged: %s", logged.String())
+			}
+		})
 	}
 }
 

@@ -114,13 +114,14 @@ func (h *Handler) models(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) notFound(w http.ResponseWriter, r *http.Request) {
-	writeError(w, r, h.log, fmt.Errorf("%w: invalid URL (%s %s)", ErrNotFound, r.Method, r.URL.Path))
+	writeError(w, r, h.log, publicError(ErrNotFound, fmt.Sprintf("Invalid URL (%s %s)", r.Method, r.URL.Path)))
 }
 
 func (h *Handler) methodNotAllowed(allow string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Allow", allow)
-		writeError(w, r, h.log, fmt.Errorf("%w: %s %s (allowed: %s)", ErrMethodNotAllowed, r.Method, r.URL.Path, allow))
+		writeError(w, r, h.log, publicError(ErrMethodNotAllowed,
+			fmt.Sprintf("Not allowed to %s on %s. Use %s.", r.Method, r.URL.Path, allow)))
 	}
 }
 
