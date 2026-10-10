@@ -18,6 +18,10 @@ import (
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	// After the first signal, stop unregisters the handler and the default
+	// signal behaviour returns, so a second signal kills the process at once
+	// instead of waiting out the drain and shutdown.
+	context.AfterFunc(ctx, stop)
 	err := run(ctx, os.LookupEnv, os.Stdout, os.Stderr)
 	stop()
 	if err != nil {
