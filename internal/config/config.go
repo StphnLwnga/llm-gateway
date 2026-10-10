@@ -61,6 +61,12 @@ type Config struct {
 	// drain. DrainDelay plus ShutdownTimeout must stay below Kubernetes' 30s
 	// grace period, or SIGKILL cuts the shutdown short.
 	ShutdownTimeout time.Duration
+
+	// DatabaseURL is the Postgres connection string. It is required: there is
+	// no safe default, and it holds a password, so it is a Secret.
+	DatabaseURL Secret
+	// DBMaxConns is the most connections the pool opens to Postgres.
+	DBMaxConns int
 }
 
 // Addr is the listen address for the HTTP server.
@@ -118,6 +124,19 @@ func Load(lookup func(key string) (string, bool)) (Config, error) {
 	}
 	cfg.DrainDelay = duration("DRAIN_DELAY", "0s")
 	cfg.ShutdownTimeout = duration("SHUTDOWN_TIMEOUT", "20s")
+
+	if v, ok := lookup("DATABASE_URL"); ok && v != "" {
+		cfg.DatabaseURL = Secret(v)
+	} else {
+		errs = append(errs, errors.New("DATABASE_URL: required, for example postgres://user:password@host:5432/db"))
+	}
+
+	rawMaxConns := get("DB_MAX_CONNS", "10")
+	maxConns, err := strconv.Atoi(rawMaxConns)
+	if err != nil || maxConns < 1 {
+		errs = append(errs, fmt.Errorf("DB_MAX_CONNS %q: must be a whole number of 1 or more", rawMaxConns))
+	}
+	cfg.DBMaxConns = maxConns
 
 	if err := errors.Join(errs...); err != nil {
 		return Config{}, err

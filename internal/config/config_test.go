@@ -10,11 +10,19 @@ import (
 	"time"
 )
 
-// env returns a lookup backed by a map. It stands in for the process environment.
+const testDSN = "postgres://gw:hunter2@db:5432/gateway"
+
+// env returns a lookup backed by a map. It stands in for the process
+// environment. It sets the required DATABASE_URL unless vars sets it.
 func env(vars map[string]string) func(string) (string, bool) {
 	return func(key string) (string, bool) {
-		v, ok := vars[key]
-		return v, ok
+		if v, ok := vars[key]; ok {
+			return v, ok
+		}
+		if key == "DATABASE_URL" {
+			return testDSN, true
+		}
+		return "", false
 	}
 }
 
@@ -38,6 +46,36 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	}
 	if cfg.ShutdownTimeout != 20*time.Second {
 		t.Errorf("ShutdownTimeout = %v, want 20s", cfg.ShutdownTimeout)
+	}
+	if cfg.DBMaxConns != 10 {
+		t.Errorf("DBMaxConns = %d, want 10", cfg.DBMaxConns)
+	}
+	if string(cfg.DatabaseURL) != testDSN {
+		t.Errorf("DatabaseURL was not read")
+	}
+}
+
+func TestLoadRequiresDatabaseURL(t *testing.T) {
+	t.Parallel()
+	missing := func(key string) (string, bool) { return "", false }
+	_, err := Load(missing)
+	if err == nil || !strings.Contains(err.Error(), "DATABASE_URL") {
+		t.Errorf("Load without DATABASE_URL = %v, want an error naming DATABASE_URL", err)
+	}
+}
+
+func TestDatabaseURLErrorNeverPrintsTheValue(t *testing.T) {
+	t.Parallel()
+	_, err := Load(env(map[string]string{"DB_MAX_CONNS": "0"}))
+	if err == nil {
+		t.Fatal("Load succeeded, want an error")
+	}
+	if strings.Contains(err.Error(), "hunter2") {
+		t.Errorf("error printed the database password: %v", err)
+	}
+	cfg, _ := Load(env(nil))
+	if out := fmt.Sprintf("%+v", cfg); strings.Contains(out, "hunter2") {
+		t.Errorf("%%+v of Config printed the database password: %s", out)
 	}
 }
 
@@ -104,6 +142,10 @@ func TestLoadRejectsInvalidSettings(t *testing.T) {
 		{"drain delay set but empty", map[string]string{"DRAIN_DELAY": ""}, "DRAIN_DELAY"},
 		{"shutdown timeout not a duration", map[string]string{"SHUTDOWN_TIMEOUT": "soon"}, "SHUTDOWN_TIMEOUT"},
 		{"shutdown timeout negative", map[string]string{"SHUTDOWN_TIMEOUT": "-20s"}, "SHUTDOWN_TIMEOUT"},
+		{"database url set but empty", map[string]string{"DATABASE_URL": ""}, "DATABASE_URL"},
+		{"max conns zero", map[string]string{"DB_MAX_CONNS": "0"}, "DB_MAX_CONNS"},
+		{"max conns negative", map[string]string{"DB_MAX_CONNS": "-3"}, "DB_MAX_CONNS"},
+		{"max conns not a number", map[string]string{"DB_MAX_CONNS": "ten"}, "DB_MAX_CONNS"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -121,11 +163,11 @@ func TestLoadRejectsInvalidSettings(t *testing.T) {
 
 func TestLoadReportsEveryInvalidSetting(t *testing.T) {
 	t.Parallel()
-	_, err := Load(env(map[string]string{"PORT": "x", "LOG_LEVEL": "loud", "LOG_FORMAT": "xml"}))
+	_, err := Load(env(map[string]string{"PORT": "x", "LOG_LEVEL": "loud", "LOG_FORMAT": "xml", "DATABASE_URL": ""}))
 	if err == nil {
 		t.Fatal("Load succeeded, want an error")
 	}
-	for _, key := range []string{"PORT", "LOG_LEVEL", "LOG_FORMAT"} {
+	for _, key := range []string{"PORT", "LOG_LEVEL", "LOG_FORMAT", "DATABASE_URL"} {
 		if !strings.Contains(err.Error(), key) {
 			t.Errorf("error %q does not name %s", err, key)
 		}

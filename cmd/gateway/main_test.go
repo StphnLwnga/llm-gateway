@@ -52,7 +52,9 @@ func TestRunLogsTheLoadedConfigAndStopsOnCancel(t *testing.T) {
 	cancel() // already "signalled": run starts, then shuts down at once
 
 	var stdout bytes.Buffer
-	err := run(ctx, env(map[string]string{"PORT": port, "LOG_LEVEL": "debug"}), &stdout, io.Discard)
+	// Nothing listens on port 1: the pool is lazy, so run must still start and stop.
+	vars := map[string]string{"PORT": port, "LOG_LEVEL": "debug", "DATABASE_URL": "postgres://gw:pw@127.0.0.1:1/gateway"}
+	err := run(ctx, env(vars), &stdout, io.Discard)
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}

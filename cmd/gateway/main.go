@@ -13,6 +13,7 @@ import (
 
 	"github.com/StphnLwnga/llm-gateway/internal/config"
 	"github.com/StphnLwnga/llm-gateway/internal/httpapi"
+	"github.com/StphnLwnga/llm-gateway/internal/store/postgres"
 	"github.com/StphnLwnga/llm-gateway/internal/telemetry"
 )
 
@@ -47,9 +48,18 @@ func run(ctx context.Context, getenv func(string) (string, bool), stdout, stderr
 		"log_format", cfg.LogFormat,
 		"drain_delay", cfg.DrainDelay.String(),
 		"shutdown_timeout", cfg.ShutdownTimeout.String(),
+		"db_max_conns", cfg.DBMaxConns,
 	)
 
-	api := httpapi.New(log) // readiness checks arrive with Postgres in S0 (c)
+	// The pool connects lazily, so the gateway starts even when Postgres is
+	// down; /readyz reports 503 until Postgres answers.
+	pool, err := postgres.Open(ctx, cfg.DatabaseURL, cfg.DBMaxConns)
+	if err != nil {
+		return err
+	}
+	defer pool.Close() // after serve returns, so in-flight requests keep their connections
+
+	api := httpapi.New(log, postgres.Pinger{Pool: pool})
 	srv := httpapi.NewServer(cfg.Addr(), api)
 	srv.ErrorLog = slog.NewLogLogger(log.Handler(), slog.LevelWarn)
 
