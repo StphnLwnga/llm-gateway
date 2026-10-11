@@ -36,6 +36,9 @@ design is in `docs/design.md` and the decisions are in `docs/adr/`.
 - **Comments.** Comments say why, only where the code cannot. No concept
   explanations (those go in `docs/`), no restating the code. Exported doc
   comments are one line unless a contract needs more.
+- **Secrets.** A struct that holds a `config.Secret` in an unexported field
+  must implement `fmt.Formatter` and `slog.LogValuer`, because `fmt` prints
+  unexported fields by reflection without calling their methods.
 
 ## Checks before every commit
 
