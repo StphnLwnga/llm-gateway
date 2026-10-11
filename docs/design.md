@@ -21,7 +21,8 @@ Decisions are recorded in [docs/adr/](adr/README.md).
 | `POST /v1/chat/completions`, streamed (SSE) and not streamed | Planned (M1) |
 | The provider contract: one streaming interface, typed upstream errors, an HTTP client with a first-byte timeout, and a contract suite every adapter runs ([0012](adr/0012-streaming-interface-callback.md)) | Built (M1) |
 | Providers: Groq and OpenAI through one OpenAI-compatible adapter, with platform keys ([0005](adr/0005-providers.md), [0013](adr/0013-provider-credentials.md)) | Built (M1) |
-| Provider: Ollama | Planned (M1) |
+| Provider: Ollama, on its native chat API, enabled by `OLLAMA_BASE_URL` | Built (M1) |
+| Provider timings in usage: queue, load, prefill and decode, as each provider reports them (Groq: queue, prefill, decode; Ollama: load, prefill, decode). A value the provider does not report stays unset, never 0. A prompt count the provider does not report is marked unknown, never billed as 0. | Built (M1). Planned (M2): TTFT and TPOT metrics from them. |
 | A fake OpenAI-compatible upstream (`fakeprovider`) with deterministic output and fault modes chosen per request in the model name, for tests and load tests | Built (M1) |
 | Provider: Anthropic, and `response_format` across providers with output schema validation | Planned (M5) |
 | Tenants, hashed API keys, encrypted per-tenant provider credentials | Planned (M3) |
@@ -84,7 +85,7 @@ What the estimates show:
 
 Two long-running processes, one admin binary, and a test server:
 
-- `cmd/gateway`: the request path. **Built (M0)**: health, readiness, the models stub, graceful shutdown, the Postgres pool. **Built (M1)**: the provider registry, with one adapter per provider that has a platform key. The rest is planned.
+- `cmd/gateway`: the request path. **Built (M0)**: health, readiness, the models stub, graceful shutdown, the Postgres pool. **Built (M1)**: the provider registry, with one adapter per provider that has a platform key, and Ollama when `OLLAMA_BASE_URL` is set. The rest is planned.
 - `cmd/worker`: everything off the request path. **Planned (M6)**.
 - `cmd/gatewayctl`: one-shot admin commands. **Built (M0)**: `migrate`.
 - `cmd/fakeprovider`: a fake OpenAI-compatible upstream with per-request fault modes (slow headers, slow first token, slow tokens, stall, drop, malformed chunk, error status), for tests and load tests. **Built (M1)**. It has its own image target, so the production image does not contain it, and Compose starts it only under the `loadtest` profile.
