@@ -16,3 +16,4 @@ Each file records one decision in a trimmed MADR form (see [0001](0001-record-de
 | [0010](0010-migrations-with-goose.md) | Migrations: goose, embedded, a one-shot step, a session advisory lock | Accepted | M0, M3 (roles, planned) |
 | [0011](0011-image-and-ci.md) | Distroless static image, CI lint set, SHA-pinned actions, one test job | Accepted | M0 |
 | [0012](0012-streaming-interface-callback.md) | Streaming interface: a callback per event, the adapter owns the body | Accepted | M1 |
+| [0013](0013-provider-credentials.md) | Provider credentials: platform keys and tenant keys, the tenant key wins | Accepted | M1 (platform keys), M3 (planned) |
