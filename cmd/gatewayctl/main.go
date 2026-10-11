@@ -53,7 +53,7 @@ func exitCode(err error) int {
 // run checks the arguments before the config, so usage prints even without DATABASE_URL.
 func run(ctx context.Context, args []string, getenv func(string) (string, bool), stdout, stderr io.Writer) error {
 	if len(args) != 2 || args[0] != "migrate" || (args[1] != "up" && args[1] != "down" && args[1] != "status") {
-		io.WriteString(stderr, usage)
+		_, _ = io.WriteString(stderr, usage)
 		return errUsage
 	}
 

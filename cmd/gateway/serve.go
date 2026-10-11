@@ -32,8 +32,7 @@ func serve(ctx context.Context, log *slog.Logger, ln net.Listener, srv *http.Ser
 	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		srv.Close()
-		return fmt.Errorf("shutdown: %w", err)
+		return fmt.Errorf("shutdown: %w", errors.Join(err, srv.Close()))
 	}
 	if err := <-serveErr; !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("serve: %w", err)

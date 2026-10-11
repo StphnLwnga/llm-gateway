@@ -41,8 +41,11 @@ func freePort(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	defer ln.Close()
-	return strconv.Itoa(ln.Addr().(*net.TCPAddr).Port)
+	port := strconv.Itoa(ln.Addr().(*net.TCPAddr).Port)
+	if err := ln.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	return port
 }
 
 func TestRunLogsTheLoadedConfigAndStopsOnCancel(t *testing.T) {

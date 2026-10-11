@@ -41,7 +41,11 @@ func migrate(ctx context.Context, log *slog.Logger, dsn config.Secret, command s
 	if err != nil {
 		return errors.New("open DATABASE_URL: not a valid Postgres connection string")
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			log.WarnContext(ctx, "close database", "err", err)
+		}
+	}()
 
 	// Retry every 1s, up to 120 times (goose's default: every 5s for 5 minutes).
 	locker, err := lock.NewPostgresSessionLocker(lock.WithLockTimeout(1, 120))

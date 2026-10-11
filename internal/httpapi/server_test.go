@@ -43,7 +43,9 @@ func decodeError(t *testing.T, rec *httptest.ResponseRecorder) errorBody {
 		}
 	}
 	var env errorEnvelope
-	json.Unmarshal(rec.Body.Bytes(), &env)
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("body does not match the error envelope: %v", err)
+	}
 	return env.Error
 }
 

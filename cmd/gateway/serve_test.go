@@ -45,10 +45,10 @@ func startGateway(t *testing.T, slowFor time.Duration, release <-chan struct{}, 
 		case <-finished:
 		case <-release:
 		case <-r.Context().Done():
-			io.WriteString(w, "request context ended early")
+			_, _ = io.WriteString(w, "request context ended early")
 			return
 		}
-		io.WriteString(w, "finished")
+		_, _ = io.WriteString(w, "finished")
 	})
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -92,7 +92,7 @@ func TestInFlightRequestFinishesDuringShutdown(t *testing.T) {
 			got <- result{err: err}
 			return
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		b, _ := io.ReadAll(resp.Body)
 		got <- result{status: resp.StatusCode, body: string(b)}
 	}()
@@ -117,7 +117,7 @@ func TestReadyzIs503DuringTheDrainDelay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /readyz: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /readyz before shutdown = %d, want 200", resp.StatusCode)
 	}
@@ -130,7 +130,7 @@ func TestReadyzIs503DuringTheDrainDelay(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GET /readyz during the drain: %v (the server must still accept connections)", err)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if resp.StatusCode == http.StatusServiceUnavailable {
 			break
 		}
@@ -151,7 +151,7 @@ func TestShutdownTimeoutReturnsADeadlineError(t *testing.T) {
 
 	go func() {
 		if resp, err := g.get("/slow"); err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 	}()
 	<-g.started
