@@ -4,7 +4,10 @@ A multi-tenant, OpenAI-compatible LLM gateway in Go: each tenant calls one API w
 
 Status: S0 (walking skeleton) in progress.
 
-Design: [docs/design.md](docs/design.md).
+## Design
+
+- [docs/design.md](docs/design.md): requirements, estimates, architecture, data model, failure modes, security, operations, and what is built or planned per slice.
+- [docs/adr/](docs/adr/README.md): one architecture decision record per decision, with the options considered and the reasons.
 
 ## Run locally
 
@@ -81,6 +84,8 @@ internal/telemetry/          the structured logger
 deploy/docker/Dockerfile     two-stage build into a distroless, non-root image
 deploy/compose.yaml          the local stack: Postgres (pgvector), migrate, gateway
 readme_test.go               fails when this README misses a setting, route or package
+docs/design.md               the system design
+docs/adr/                    architecture decision records
 .github/                     CI workflow, Dependabot, pull request template
 .golangci.yml                lint settings
 ```
