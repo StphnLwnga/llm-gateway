@@ -3,15 +3,19 @@ package main
 import (
 	"bytes"
 	"io"
+	"os"
 	"strings"
 	"testing"
 
-	"github.com/StphnLwnga/llm-gateway/internal/store/postgres/pgtest"
+	"github.com/testcontainers/testcontainers-go"
+	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
+
+	"github.com/StphnLwnga/llm-gateway/internal/config"
 )
 
 func TestRoutesCommandsAgainstPostgres(t *testing.T) {
 	t.Parallel()
-	_, dsn := pgtest.Start(t)
+	dsn := startPostgres(t)
 	vars := env(map[string]string{"DATABASE_URL": string(dsn), "LOG_FORMAT": "text"})
 	ctl := func(args ...string) (string, error) {
 		var out bytes.Buffer
@@ -69,4 +73,41 @@ func indexOf(id string, rows []string) int {
 		}
 	}
 	return 0
+}
+
+// postgresImage is the same image as deploy/compose.yaml. Test files hold
+// their own copy of this helper because a shared non-test package would pull
+// testcontainers into the code that govulncheck scans.
+const postgresImage = "pgvector/pgvector:0.8.7-pg18-trixie"
+
+// startPostgres skips without Docker locally, but fails in CI so the tests never silently stop.
+func startPostgres(t *testing.T) config.Secret {
+	t.Helper()
+	ctx := t.Context()
+	provider, err := testcontainers.ProviderDocker.GetProvider()
+	if err == nil {
+		err = provider.Health(ctx)
+	}
+	if err != nil {
+		if os.Getenv("CI") != "" {
+			t.Fatalf("Docker is required in CI for integration tests: %v", err)
+		}
+		t.Skipf("Docker is not available, skipping the Postgres integration test: %v", err)
+	}
+
+	ctr, err := tcpostgres.Run(ctx, postgresImage,
+		tcpostgres.WithDatabase("gateway"),
+		tcpostgres.WithUsername("gateway"),
+		tcpostgres.WithPassword("gateway-test"),
+		tcpostgres.BasicWaitStrategies(),
+	)
+	testcontainers.CleanupContainer(t, ctr)
+	if err != nil {
+		t.Fatalf("start postgres: %v", err)
+	}
+	dsn, err := ctr.ConnectionString(ctx, "sslmode=disable")
+	if err != nil {
+		t.Fatalf("connection string: %v", err)
+	}
+	return config.Secret(dsn)
 }

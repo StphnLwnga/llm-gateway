@@ -166,7 +166,6 @@ Every pull request and every push to `main` runs four jobs in GitHub Actions (`.
 │   ├── router/              model alias to providers, from an in-memory snapshot of the routes table
 │   ├── store/
 │   │   └── postgres/        the connection pool, the readiness check, embedded migrations, the routes table
-│   │       └── pgtest/      starts a throwaway Postgres for integration tests
 │   └── telemetry/           the structured logger
 ├── deploy/
 │   ├── docker/

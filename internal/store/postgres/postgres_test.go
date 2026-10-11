@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -13,20 +14,49 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
 	"github.com/StphnLwnga/llm-gateway/internal/config"
 	"github.com/StphnLwnga/llm-gateway/internal/httpapi"
 	"github.com/StphnLwnga/llm-gateway/internal/store/postgres"
-	"github.com/StphnLwnga/llm-gateway/internal/store/postgres/pgtest"
 )
 
 var discard = slog.New(slog.DiscardHandler)
 
-// startPostgres skips without Docker locally, but fails in CI.
+// postgresImage is the same image as deploy/compose.yaml.
+const postgresImage = "pgvector/pgvector:0.8.7-pg18-trixie"
+
+// startPostgres skips without Docker locally, but fails in CI so the tests never silently stop.
 func startPostgres(t *testing.T) (*tcpostgres.PostgresContainer, config.Secret) {
 	t.Helper()
-	return pgtest.Start(t)
+	ctx := t.Context()
+	provider, err := testcontainers.ProviderDocker.GetProvider()
+	if err == nil {
+		err = provider.Health(ctx)
+	}
+	if err != nil {
+		if os.Getenv("CI") != "" {
+			t.Fatalf("Docker is required in CI for integration tests: %v", err)
+		}
+		t.Skipf("Docker is not available, skipping the Postgres integration test: %v", err)
+	}
+
+	ctr, err := tcpostgres.Run(ctx, postgresImage,
+		tcpostgres.WithDatabase("gateway"),
+		tcpostgres.WithUsername("gateway"),
+		tcpostgres.WithPassword("gateway-test"),
+		tcpostgres.BasicWaitStrategies(),
+	)
+	testcontainers.CleanupContainer(t, ctr)
+	if err != nil {
+		t.Fatalf("start postgres: %v", err)
+	}
+	dsn, err := ctr.ConnectionString(ctx, "sslmode=disable")
+	if err != nil {
+		t.Fatalf("connection string: %v", err)
+	}
+	return ctr, config.Secret(dsn)
 }
 
 func openPool(t *testing.T, dsn config.Secret) *pgxpool.Pool {
