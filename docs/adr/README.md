@@ -10,3 +10,8 @@ Each file records one decision in a trimmed MADR form (see [0001](0001-record-de
 | [0004](0004-kafka-for-the-usage-pipeline.md) | Kafka (KRaft, franz-go) for the usage pipeline | Accepted | S6 (planned) |
 | [0005](0005-providers.md) | Providers: Ollama, Groq, OpenAI, Anthropic | Accepted | S1, S5 (planned) |
 | [0006](0006-deploy-targets.md) | Deploy targets: Compose, kind, EKS, GKE Autopilot, via Terraform | Accepted | S0 (Compose), S8, S12, S13 (planned) |
+| [0007](0007-module-layout.md) | Module layout: cmd/, internal/ by component, consumer-side interfaces | Accepted | S0 |
+| [0008](0008-graceful-shutdown.md) | Graceful shutdown: readiness drain, Shutdown, then Close | Accepted | S0, S8 (probe timing, planned) |
+| [0009](0009-pgx-pool-with-lazy-connect.md) | pgx pool with lazy connect | Accepted | S0 |
+| [0010](0010-migrations-with-goose.md) | Migrations: goose, embedded, a one-shot step, a session advisory lock | Accepted | S0, S3 (roles, planned) |
+| [0011](0011-image-and-ci.md) | Distroless static image, CI lint set, SHA-pinned actions, one test job | Accepted | S0 |
