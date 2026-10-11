@@ -63,6 +63,32 @@ Settings come from environment variables. Both binaries, `gateway` and `gatewayc
 | `OLLAMA_BASE_URL` | none | An http or https URL, for example `http://localhost:11434`. Ollama is enabled only when this is set; it needs no key. From inside Compose, Ollama on the host is `http://host.docker.internal:11434`. |
 | `ROUTES_REFRESH_INTERVAL` | `10s` | A Go duration above 0. How often the gateway reloads the routes table into memory. A change made with `gatewayctl routes` takes effect within one interval. |
 
+## Routes
+
+A route maps a model alias, the name a client sends as `model`, to one provider and its upstream model. One alias can have several routes; the lowest `priority` is tried first. Routes live in the `routes` table, and `gatewayctl routes` manages them:
+
+```bash
+gatewayctl routes add --alias chat --provider groq --upstream-model openai/gpt-oss-20b --priority 10 \
+  --input-price 0.05 --output-price 0.08 --default-max-tokens 512 --max-max-tokens 4096
+gatewayctl routes add --alias chat --provider ollama --upstream-model llama3.2:3b --priority 20
+gatewayctl routes list
+gatewayctl routes disable 1
+```
+
+Prices are US dollars per million tokens, with at most six decimal places, and are stored exactly: `numeric` in Postgres and integer micro-dollars in Go. A route can only be added for `groq`, `openai` or `ollama`, with prices of 0 or more, and `--max-max-tokens` not below `--default-max-tokens`.
+
+The gateway keeps the enabled routes in memory and reloads them every `ROUTES_REFRESH_INTERVAL`, so a request never waits on Postgres to find its route. A change made with `gatewayctl` takes effect within one interval.
+
+```text
+gatewayctl routes add ──> Postgres routes table
+                              │  every ROUTES_REFRESH_INTERVAL
+                              v
+gateway: in-memory snapshot (swapped atomically) ──> /v1/models, routing
+         a failed reload keeps the last good snapshot
+```
+
+A route whose provider is not enabled (no key, or no `OLLAMA_BASE_URL`) is skipped, and the gateway logs it once when that set of routes changes. `/readyz` returns 503 until the routes table has loaded once. After that, a failed reload does not make the pod unready: it keeps serving the last good snapshot.
+
 ## Shutdown
 
 On SIGINT or SIGTERM the gateway marks itself as draining (`/readyz` returns 503), waits `DRAIN_DELAY`, stops accepting connections, and gives in-flight requests up to `SHUTDOWN_TIMEOUT` to finish. A signal never cancels a request that is already running; only the timeout does.
@@ -127,7 +153,7 @@ Every pull request and every push to `main` runs four jobs in GitHub Actions (`.
 ├── cmd/
 │   ├── fakeprovider/        the fake upstream as a server, for local and load tests
 │   ├── gateway/             the HTTP server: composition root, graceful shutdown
-│   └── gatewayctl/          one-shot admin commands: migrate up, down, status
+│   └── gatewayctl/          one-shot admin commands: migrate up, down, status; routes add, list, enable, disable
 ├── internal/
 │   ├── config/              settings parsed into typed values; Secret redaction
 │   ├── fakeupstream/        a fake OpenAI chat completions server with per-request fault modes
