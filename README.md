@@ -131,6 +131,7 @@ Every pull request and every push to `main` runs four jobs in GitHub Actions (`.
 │   ├── fakeupstream/        a fake OpenAI chat completions server with per-request fault modes
 │   ├── httpapi/             routes, readiness checks, the OpenAI error shape, server timeouts
 │   ├── provider/            the provider contract: request and event types, the Provider interface, typed upstream errors, the upstream HTTP client
+│   │   ├── ollama/          the adapter for Ollama's native chat API, with load, prefill and decode timings
 │   │   ├── openaicompat/    the adapter for OpenAI-compatible APIs (Groq, OpenAI), with recorded and constructed wire fixtures
 │   │   └── providertest/    the contract suite every adapter runs against a fake upstream
 │   ├── store/
