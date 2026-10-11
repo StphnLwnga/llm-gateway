@@ -84,7 +84,8 @@ Every pull request and every push to `main` runs four jobs in GitHub Actions (`.
 ├── internal/
 │   ├── config/              settings parsed into typed values; Secret redaction
 │   ├── httpapi/             routes, readiness checks, the OpenAI error shape, server timeouts
-│   ├── provider/            the provider contract: request and event types, the Provider interface, typed upstream errors
+│   ├── provider/            the provider contract: request and event types, the Provider interface, typed upstream errors, the upstream HTTP client
+│   │   └── providertest/    the contract suite every adapter runs against a fake upstream
 │   ├── store/
 │   │   └── postgres/        the connection pool, the readiness check, embedded migrations
 │   └── telemetry/           the structured logger
