@@ -83,6 +83,7 @@ Every pull request and every push to `main` runs four jobs in GitHub Actions (`.
 │   └── gatewayctl/          one-shot admin commands: migrate up, down, status
 ├── internal/
 │   ├── config/              settings parsed into typed values; Secret redaction
+│   ├── fakeupstream/        a fake OpenAI chat completions server with per-request fault modes
 │   ├── httpapi/             routes, readiness checks, the OpenAI error shape, server timeouts
 │   ├── provider/            the provider contract: request and event types, the Provider interface, typed upstream errors, the upstream HTTP client
 │   │   └── providertest/    the contract suite every adapter runs against a fake upstream
