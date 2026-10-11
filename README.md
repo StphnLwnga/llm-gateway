@@ -80,7 +80,7 @@ It serves `POST /v1/chat/completions`, streamed or not (`stream_options.include_
 | `ttfb` | duration | Waits before the response headers |
 | `first_token` | duration | Sends the headers at once, then waits before the first chunk |
 | `tpot` | duration | Waits between tokens |
-| `tokens` | count, default 5 | The number of tokens in the answer. A smaller `max_tokens` in the request cuts it, with finish reason `length`. |
+| `tokens` | count, default 5 | The number of tokens in the answer. A smaller `max_completion_tokens` (or the older `max_tokens`) in the request cuts it, with finish reason `length`. |
 | `stall_after` | count | Sends that many tokens, then nothing until the client goes away |
 | `drop_after` | count | Sends that many tokens, then closes the TCP connection with no clean end |
 | `malformed_after` | count | Sends that many tokens, then one chunk that is not valid JSON, and ends |

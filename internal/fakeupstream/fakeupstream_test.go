@@ -134,6 +134,17 @@ func TestMaxTokensCutsTheAnswerWithFinishReasonLength(t *testing.T) {
 	}
 }
 
+func TestMaxCompletionTokensWinsOverMaxTokens(t *testing.T) {
+	t.Parallel()
+	srv := newServer(t)
+	resp := post(t.Context(), t, srv.URL, `{"model":"fake?tokens=10","max_completion_tokens":1,"max_tokens":5,"messages":[]}`)
+	defer func() { _ = resp.Body.Close() }()
+	want := `{"id":"chatcmpl-fake","object":"chat.completion","created":0,"model":"fake","choices":[{"index":0,"message":{"role":"assistant","content":"The"},"finish_reason":"length"}],"usage":{"prompt_tokens":0,"completion_tokens":1,"total_tokens":1}}` + "\n"
+	if got := readAll(t, resp); got != want {
+		t.Errorf("body:\n%s\nwant:\n%s", got, want)
+	}
+}
+
 func TestModelsListsTheFakeModel(t *testing.T) {
 	t.Parallel()
 	srv := newServer(t)

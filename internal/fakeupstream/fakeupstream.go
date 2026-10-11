@@ -43,7 +43,8 @@ type chatRequest struct {
 	StreamOptions *struct {
 		IncludeUsage bool `json:"include_usage"`
 	} `json:"stream_options"`
-	MaxTokens *int `json:"max_tokens"`
+	MaxTokens           *int `json:"max_tokens"`
+	MaxCompletionTokens *int `json:"max_completion_tokens"`
 }
 
 type usage struct {
@@ -118,8 +119,12 @@ func chat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	n, finish := p.tokens, "stop"
-	if req.MaxTokens != nil && *req.MaxTokens < n {
-		n, finish = max(*req.MaxTokens, 0), "length"
+	limit := req.MaxCompletionTokens
+	if limit == nil {
+		limit = req.MaxTokens // deprecated by OpenAI and Groq, still accepted
+	}
+	if limit != nil && *limit < n {
+		n, finish = max(*limit, 0), "length"
 	}
 	prompt := 0
 	for _, m := range req.Messages {
