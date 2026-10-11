@@ -10,8 +10,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/StphnLwnga/llm-gateway/internal/config"
 	"github.com/StphnLwnga/llm-gateway/internal/provider"
@@ -72,10 +74,29 @@ type usage struct {
 	PromptTokens     int `json:"prompt_tokens"`
 	CompletionTokens int `json:"completion_tokens"`
 	TotalTokens      int `json:"total_tokens"`
+
+	// Groq only, in seconds. Groq's reference gives no unit; its example
+	// (0.463 for 556 tokens) and recorded streams only fit seconds.
+	QueueTime      *float64 `json:"queue_time"`
+	PromptTime     *float64 `json:"prompt_time"`
+	CompletionTime *float64 `json:"completion_time"`
 }
 
 func (u usage) toProvider() provider.Usage {
-	return provider.Usage{PromptTokens: u.PromptTokens, CompletionTokens: u.CompletionTokens, TotalTokens: u.TotalTokens}
+	out := provider.Usage{PromptTokens: u.PromptTokens, CompletionTokens: u.CompletionTokens, TotalTokens: u.TotalTokens}
+	t := provider.Timings{Queue: seconds(u.QueueTime), Prefill: seconds(u.PromptTime), Decode: seconds(u.CompletionTime)}
+	if t.Queue != nil || t.Prefill != nil || t.Decode != nil {
+		out.Timings = &t
+	}
+	return out
+}
+
+func seconds(s *float64) *time.Duration {
+	if s == nil {
+		return nil
+	}
+	d := time.Duration(math.Round(*s * float64(time.Second)))
+	return &d
 }
 
 type apiError struct {

@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/StphnLwnga/llm-gateway/internal/config"
 	"github.com/StphnLwnga/llm-gateway/internal/provider"
@@ -104,8 +105,8 @@ func collect(t *testing.T, p provider.Provider) ([]provider.Event, error) {
 type summary struct {
 	Text    string
 	Finish  []string
-	Usage   []provider.Usage
-	Ordered bool // no delta after the finish reason or the usage
+	Usage   []provider.Usage // token counts only; timings are checked separately
+	Ordered bool             // no delta after the finish reason or the usage
 }
 
 func summarize(evs []provider.Event) summary {
@@ -122,7 +123,7 @@ func summarize(evs []provider.Event) summary {
 			ended = true
 		}
 		if e.Usage != nil {
-			s.Usage = append(s.Usage, *e.Usage)
+			s.Usage = append(s.Usage, provider.Usage{PromptTokens: e.Usage.PromptTokens, CompletionTokens: e.Usage.CompletionTokens, TotalTokens: e.Usage.TotalTokens})
 			ended = true
 		}
 	}
@@ -216,6 +217,7 @@ func TestChatFixtures(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Chat: %v", err)
 			}
+			resp.Usage.Timings = nil
 			if resp != tc.want {
 				t.Errorf("Chat = %+v, want %+v", resp, tc.want)
 			}
@@ -342,6 +344,61 @@ func TestStreamReportsUsageOnceWhenBothShapesArrive(t *testing.T) {
 	if got := summarize(evs).Usage; len(got) != 1 || got[0].TotalTokens != 7 {
 		t.Errorf("usage events = %+v, want exactly one with total 7", got)
 	}
+}
+
+func dur(d *time.Duration) string {
+	if d == nil {
+		return "unset"
+	}
+	return d.String()
+}
+
+func timings(u *provider.Usage) string {
+	if u == nil || u.Timings == nil {
+		return "none"
+	}
+	return fmt.Sprintf("queue=%s load=%s prefill=%s decode=%s", dur(u.Timings.Queue), dur(u.Timings.Load), dur(u.Timings.Prefill), dur(u.Timings.Decode))
+}
+
+func TestGroqTimingsAreConvertedFromSeconds(t *testing.T) {
+	t.Parallel()
+	cases := []struct{ file, want string }{
+		// recorded from Groq
+		{"groq_stream_recorded.sse", "queue=83.29193ms load=unset prefill=1.039105ms decode=7.396903ms"},
+		// constructed from the OpenAI API reference: OpenAI reports no timings
+		{"openai_stream_constructed.sse", "none"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.file, func(t *testing.T) {
+			t.Parallel()
+			a, _ := serve(t, "text/event-stream", fixture(t, tc.file))
+			var u *provider.Usage
+			err := a.Stream(t.Context(), provider.Request{Model: "m"}, func(e provider.Event) error {
+				if e.Usage != nil {
+					u = e.Usage
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatalf("Stream: %v", err)
+			}
+			if got := timings(u); got != tc.want {
+				t.Errorf("timings = %s, want %s", got, tc.want)
+			}
+		})
+	}
+
+	t.Run("groq_chat_recorded.json", func(t *testing.T) {
+		t.Parallel()
+		a, _ := serve(t, "application/json", fixture(t, "groq_chat_recorded.json"))
+		resp, err := a.Chat(t.Context(), provider.Request{Model: "m"})
+		if err != nil {
+			t.Fatalf("Chat: %v", err)
+		}
+		if got, want := timings(&resp.Usage), "queue=88.860954ms load=unset prefill=1.035525ms decode=7.399842ms"; got != want {
+			t.Errorf("timings = %s, want %s", got, want)
+		}
+	})
 }
 
 func TestTheKeyIsSentAndNeverPrinted(t *testing.T) {
