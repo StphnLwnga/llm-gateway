@@ -39,6 +39,10 @@ design is in `docs/design.md` and the decisions are in `docs/adr/`.
 - **Secrets.** A struct that holds a `config.Secret` in an unexported field
   must implement `fmt.Formatter` and `slog.LogValuer`, because `fmt` prints
   unexported fields by reflection without calling their methods.
+- **Test helpers.** Test helpers that import test-only dependencies (for
+  example testcontainers) live in `_test.go` files. govulncheck scans every
+  non-test package, so a helper package pulls those dependencies into the
+  production scan.
 
 ## Checks before every commit
 
