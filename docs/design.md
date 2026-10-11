@@ -18,7 +18,7 @@ Decisions are recorded in [docs/adr/](adr/README.md).
 | `GET /healthz` (liveness) and `GET /readyz` (readiness) | Built (M0) |
 | `GET /v1/models` in the OpenAI list shape: the aliases with at least one usable route | Built (M1) |
 | Every error in the OpenAI error envelope ([0002](adr/0002-openai-compatible-api-and-error-envelope.md)) | Built (M0) |
-| `POST /v1/chat/completions`, streamed (SSE) and not streamed | Planned (M1) |
+| `POST /v1/chat/completions`, streamed (SSE) and not streamed; a non-streamed request is joined from an upstream stream ([0015](adr/0015-streaming-responses.md)) | Built (M1) |
 | The provider contract: one streaming interface, typed upstream errors, an HTTP client with a first-byte timeout, and a contract suite every adapter runs ([0012](adr/0012-streaming-interface-callback.md)) | Built (M1) |
 | Providers: Groq and OpenAI through one OpenAI-compatible adapter, with platform keys ([0005](adr/0005-providers.md), [0013](adr/0013-provider-credentials.md)) | Built (M1) |
 | Provider: Ollama, on its native chat API, enabled by `OLLAMA_BASE_URL` | Built (M1) |
@@ -45,7 +45,7 @@ Decisions are recorded in [docs/adr/](adr/README.md).
 | An in-flight request survives SIGTERM, inside the Kubernetes grace period | `TestInFlightRequestFinishesDuringShutdown`, `TestReadyzIs503DuringTheDrainDelay` | Built (M0) |
 | No secret in logs or error bodies | Redaction tests through the real slog handlers and `encoding/json`; fixed 5xx message | Built (M0) for config and errors |
 | No known vulnerability reachable from the code | `govulncheck` in CI | Built (M0) |
-| The HTTP status is held until the first token; heartbeats keep the stream open; a stall timeout cuts a stream that stops | Contract tests against a fake provider | Planned (M1) |
+| The HTTP status is held for up to `STATUS_HOLD`, then heartbeats keep the stream open; a watchdog cuts a stream with no first event or a stalled one | End-to-end tests through the fake provider's fault modes, the watchdog's own tests, and an OpenAI Python SDK check | Built (M1) |
 | Gateway overhead over the upstream is measured | k6 p50 and p95 against a fake upstream. No target is set before the first measurement. | Planned (M1) |
 | No usage is lost and none is counted twice when Kafka is down | Stop Kafka, send 100 requests, restart: 100 ledger rows, 0 duplicates after injected duplicates | Planned (M6) |
 | Tenant A never reaches tenant B's credential, cache entry or request log | Isolation suite that attempts each access and fails if it succeeds | Planned (M3, M11) |
@@ -115,7 +115,7 @@ The nine steps run in `cmd/gateway`, in this order. **Planned (M1 to M11)**; the
 3. Run the input guards (M10).
 4. Look up the exact cache (M7), then the semantic cache (M11).
 5. Route: model alias, then an ordered provider list with a breaker and retries. Failover happens only before the first content delta (M4).
-6. Stream from the provider. Hold the HTTP status until the first token, and send SSE heartbeats meanwhile. A stall timeout cuts a stream that stops sending tokens (M1).
+6. Stream from the provider. Hold the HTTP status for up to `STATUS_HOLD`, then commit 200 and send SSE heartbeats until the first token. A watchdog cuts a stream with no first event or a stalled one. **Built (M1)**, with the first route only; failover in step 5 is M4.
 7. Run the output guards, with a holdback window for streams (M10).
 8. Settle the budget (M7).
 9. Write the usage record and a transactional outbox row in one Postgres transaction (M6).
@@ -198,8 +198,8 @@ What happens when each dependency fails, and what the client sees.
 | Kafka | Down | Nothing on the request path. Outbox rows accumulate in Postgres. The relay publishes them when Kafka returns, and billing is idempotent on `request_id`. | Nothing. | Planned (M6) |
 | Provider | Error or 429 before the first token | Retry with jitter, honouring `Retry-After`, then fail over to the next provider in the route. The breaker opens for an endpoint that keeps failing. A 401 or 403 cools down that credential, not the provider. | A normal response from another provider, or an error status in the OpenAI envelope if every provider fails. | Planned (M4) |
 | Provider | Drops mid-stream | No failover after content has started. Usage is marked truncated. | An error event in the SSE stream. | Planned (M4) |
-| Provider | Stalls mid-stream | The stall timeout cuts the stream. | An error event in the SSE stream. | Planned (M1) |
-| Client | Disconnects | The request context ends, which cancels the upstream call. | Nothing. | Planned (M1) |
+| Provider | Stalls mid-stream | The watchdog's stall deadline cuts the stream. | An error event in the SSE stream, with no `[DONE]`; a real 504 if the status was not sent yet. | Built (M1) |
+| Client | Disconnects | The request context ends, which cancels the upstream call. It is logged as `client_gone` and never counts against the provider. | Nothing. | Built (M1) |
 
 ## 6. Security
 
