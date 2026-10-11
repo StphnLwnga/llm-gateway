@@ -136,6 +136,7 @@ Every pull request and every push to `main` runs four jobs in GitHub Actions (`.
 │   │   ├── ollama/          the adapter for Ollama's native chat API, with load, prefill and decode timings
 │   │   ├── openaicompat/    the adapter for OpenAI-compatible APIs (Groq, OpenAI), with recorded and constructed wire fixtures
 │   │   └── providertest/    the contract suite every adapter runs against a fake upstream
+│   ├── router/              model alias to providers, from an in-memory snapshot of the routes table
 │   ├── store/
 │   │   └── postgres/        the connection pool, the readiness check, embedded migrations
 │   └── telemetry/           the structured logger
