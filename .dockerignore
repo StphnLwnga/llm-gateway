@@ -1,0 +1,13 @@
+# Only the Go sources go into the build context.
+.git
+.github
+.env
+.env.*
+bin/
+deploy/
+docs/
+loadtests/
+*.md
+coverage.out
+coverage.html
+*.coverprofile

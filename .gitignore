@@ -1,0 +1,12 @@
+# Local settings. Only the example file is committed.
+.env
+.env.*
+!.env.example
+
+# Build output
+bin/
+
+# Coverage
+coverage.out
+coverage.html
+*.coverprofile
