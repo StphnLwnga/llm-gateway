@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -13,6 +14,9 @@ import (
 
 // Open returns a pool of at most maxConns connections without dialing Postgres.
 func Open(ctx context.Context, dsn config.Secret, maxConns int) (*pgxpool.Pool, error) {
+	if maxConns < 1 || maxConns > math.MaxInt32 {
+		return nil, fmt.Errorf("pool size %d: must be from 1 to %d", maxConns, math.MaxInt32)
+	}
 	pc, err := pgxpool.ParseConfig(string(dsn))
 	if err != nil {
 		// The parse error can quote the connection string, password included.

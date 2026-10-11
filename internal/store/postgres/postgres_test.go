@@ -3,6 +3,7 @@ package postgres_test
 import (
 	"context"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -226,6 +227,16 @@ func TestOpenDoesNotPrintThePassword(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "hunter2") {
 		t.Errorf("Open's error printed the password: %v", err)
+	}
+}
+
+func TestOpenRejectsAPoolSizeOutsideInt32(t *testing.T) {
+	t.Parallel()
+	for _, n := range []int{0, math.MaxInt32 + 1, 1<<32 + 1} {
+		if pool, err := postgres.Open(t.Context(), "postgres://gw:pw@127.0.0.1:1/gateway", n); err == nil {
+			pool.Close()
+			t.Errorf("Open with %d connections succeeded, want an error", n)
+		}
 	}
 }
 
