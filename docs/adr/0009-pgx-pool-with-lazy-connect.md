@@ -2,8 +2,8 @@
 
 - Status: Accepted
 - Date: 2026-10-10
-- Decided by: Stephen Lwanga (accepted the recommendation)
-- Implemented in: S0 (c): db6bd57. S0 (d): the pool size bounds, e7b7e0e and 8829e5f.
+- Decision-makers: Stephen Lwanga
+- Implemented in: Milestone 0: db6bd57, and the pool size bounds in e7b7e0e and 8829e5f.
 
 ## Context
 
@@ -42,10 +42,10 @@ Measured on Compose: after Postgres stopped, `/readyz` returned 503 within 320 m
 ## Consequences
 
 - Good: a database outage takes pods out of rotation and never restarts them.
-- Bad (known trade-off): `pgxpool`'s `Ping` borrows a connection from the same pool that serves requests. When every connection is busy, the ping waits, the 2 second check times out, and `/readyz` returns 503 although Postgres is healthy. Under heavy load every pod could fail readiness at once. S0 has no load that can exhaust a pool. S8 runs the HPA under k6 load and decides with measurements.
-- Bad: scale-out multiplies connections. Ten replicas with a pool of 10 reach the default limit of 100. S8 sizes pools per replica or adds a connection pooler such as PgBouncer.
+- Bad (known trade-off): `pgxpool`'s `Ping` borrows a connection from the same pool that serves requests. When every connection is busy, the ping waits, the 2 second check times out, and `/readyz` returns 503 although Postgres is healthy. Under heavy load every pod could fail readiness at once. The current deployment has no load that can exhaust a pool. Milestone 8 runs the HPA under k6 load and decides with measurements.
+- Bad: scale-out multiplies connections. Ten replicas with a pool of 10 reach the default limit of 100. Milestone 8 sizes pools per replica or adds a connection pooler such as PgBouncer.
 
-The readiness options S8 compares:
+The readiness options milestone 8 compares:
 
 | Readiness check | What `/readyz` then means | Risk |
 |---|---|---|

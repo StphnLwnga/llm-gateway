@@ -2,8 +2,8 @@
 
 - Status: Accepted
 - Date: 2026-10-10
-- Decided by: Stephen Lwanga
-- Implemented in: S1 (planned): Ollama, and one OpenAI-compatible adapter for Groq and OpenAI. S5 (planned): Anthropic.
+- Decision-makers: Stephen Lwanga
+- Implemented in: Milestone 1 (planned): Ollama, and one OpenAI-compatible adapter for Groq and OpenAI. Milestone 5 (planned): Anthropic.
 
 ## Context
 
@@ -35,7 +35,7 @@ The adapter seam is proven when one interface serves both protocols with the sam
 
 ## Consequences
 
-- Good: the router (S4) can fail over between providers on different protocols, so failover is tested across real differences.
+- Good: the router (M4) can fail over between providers on different protocols, so failover is tested across real differences.
 - Good: development runs against Ollama or Groq's free plan before it uses paid providers.
 - Bad: each adapter maps its provider's finish reasons, usage fields and errors to the gateway's types and to the OpenAI envelope ([0002](0002-openai-compatible-api-and-error-envelope.md)).
 - Bad: OpenAI reports streamed usage only when the request sets `stream_options.include_usage`, so the adapter must set it.

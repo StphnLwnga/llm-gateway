@@ -2,11 +2,11 @@
 
 A multi-tenant, OpenAI-compatible LLM gateway in Go: each tenant calls one API with its own key, and the gateway routes the request to Ollama, Groq, OpenAI or Anthropic with rate limits, budgets, usage metering and tracing.
 
-Status: S0 (walking skeleton) in progress.
+Status: Milestone 0 (walking skeleton) in progress.
 
 ## Design
 
-- [docs/design.md](docs/design.md): requirements, estimates, architecture, data model, failure modes, security, operations, and what is built or planned per slice.
+- [docs/design.md](docs/design.md): requirements, estimates, architecture, data model, failure modes, security, operations, and the roadmap.
 - [docs/adr/](docs/adr/README.md): one architecture decision record per decision, with the options considered and the reasons.
 
 ## Run locally

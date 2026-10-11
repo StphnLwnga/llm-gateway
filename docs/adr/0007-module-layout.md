@@ -2,8 +2,8 @@
 
 - Status: Accepted
 - Date: 2026-10-10
-- Decided by: Stephen Lwanga (accepted the recommendation)
-- Implemented in: S0 (a)
+- Decision-makers: Stephen Lwanga
+- Implemented in: Milestone 0
 
 ## Context
 

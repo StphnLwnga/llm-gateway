@@ -2,8 +2,8 @@
 
 - Status: Accepted
 - Date: 2026-10-10
-- Decided by: Stephen Lwanga (accepted the recommendation)
-- Implemented in: S0 (b): 392ed3f, 796bff8. S8 (planned): probe timing and the deployment's drain settings.
+- Decision-makers: Stephen Lwanga
+- Implemented in: Milestone 0: 392ed3f, 796bff8. Milestone 8 (planned): probe timing and the deployment's drain settings.
 
 ## Context
 
@@ -37,7 +37,7 @@ SIGTERM ─> draining: /readyz 503, still serving ─> DRAIN_DELAY ends
 ```
 
 - **The budget.** `DRAIN_DELAY` (default 0s locally, 5s planned in Kubernetes) plus `SHUTDOWN_TIMEOUT` (default 20s) must stay below the grace period: 5s + 20s = 25s, under 30s.
-- **Request contexts are not derived from the signal context.** The server keeps its default `BaseContext`. A request context derived from the signal context would end every in-flight stream on SIGTERM. A mutation test confirmed this once the fake handler watched its request context.
+- **Request contexts are not derived from the signal context.** The server keeps its default `BaseContext`. A request context derived from the signal context would end every in-flight stream on SIGTERM. The in-flight shutdown test uses a handler that watches its request context, so it fails if this changes.
 - **The shutdown deadline keeps the context's values.** `context.WithoutCancel(ctx)` with its own timeout, because `ctx` is already cancelled when shutdown starts.
 - **A second signal quits at once.** `context.AfterFunc(ctx, stop)` restores the default signal behaviour right after the first signal, so a second Ctrl-C or SIGTERM ends the process without waiting for the drain.
 - **A timed-out shutdown is reported.** `Shutdown`'s error is joined with `Close`'s, and the process exits 1, so the logs show that requests were cut.
@@ -45,8 +45,8 @@ SIGTERM ─> draining: /readyz 503, still serving ─> DRAIN_DELAY ends
 ## Consequences
 
 - Good: an in-flight stream survives SIGTERM, and a request that a late node routes to the pod during `DRAIN_DELAY` gets 200.
-- Bad: the Kubernetes probe defaults (`periodSeconds` 10, `failureThreshold` 3) can keep a pod ready for about 30 seconds, longer than a 5s `DRAIN_DELAY`. The 503 then matters only after the delay. S8 sets the probe timing to fit inside the delay, and S12 and S13 do the same for cloud load balancer health checks.
-- Bad: S8 still decides whether the deployment uses the in-app delay, a `preStop` sleep, or both.
+- Bad: the Kubernetes probe defaults (`periodSeconds` 10, `failureThreshold` 3) can keep a pod ready for about 30 seconds, longer than a 5s `DRAIN_DELAY`. The 503 then matters only after the delay. Milestone 8 sets the probe timing to fit inside the delay, and milestones 12 and 13 do the same for cloud load balancer health checks.
+- Bad: Milestone 8 still decides whether the deployment uses the in-app delay, a `preStop` sleep, or both.
 
 ## Links
 

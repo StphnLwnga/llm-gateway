@@ -9,9 +9,7 @@ design is in `docs/design.md` and the decisions are in `docs/adr/`.
 
 ## How work is done
 
-- One branch and one pull request per slice, named `feat/sNN-<name>`.
-- A slice is built in subslices. Each subslice is one commit, or a few.
-- Agents write the code. Stephen reviews each subslice and merges.
+- One branch and one pull request per milestone, named `feat/sNN-<name>`.
 - Merge commits only. No squash, no rebase merge.
 - The README is updated in the same pull request as the code it describes.
 

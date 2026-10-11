@@ -4,14 +4,14 @@ Each file records one decision in a trimmed MADR form (see [0001](0001-record-de
 
 | ADR | Decision | Status | Implemented in |
 |---|---|---|---|
-| [0001](0001-record-decisions-as-madr-adrs.md) | Record decisions as MADR ADRs, one per decision | Accepted | S0 |
-| [0002](0002-openai-compatible-api-and-error-envelope.md) | OpenAI-compatible API and error envelope | Accepted | S0 (envelope), S1 (planned) |
-| [0003](0003-postgres-system-of-record-redis-admission-only.md) | Postgres as the system of record, Redis only for admission control | Accepted | S0 (pool), S3, S6, S7, S11 (planned) |
-| [0004](0004-kafka-for-the-usage-pipeline.md) | Kafka (KRaft, franz-go) for the usage pipeline | Accepted | S6 (planned) |
-| [0005](0005-providers.md) | Providers: Ollama, Groq, OpenAI, Anthropic | Accepted | S1, S5 (planned) |
-| [0006](0006-deploy-targets.md) | Deploy targets: Compose, kind, EKS, GKE Autopilot, via Terraform | Accepted | S0 (Compose), S8, S12, S13 (planned) |
-| [0007](0007-module-layout.md) | Module layout: cmd/, internal/ by component, consumer-side interfaces | Accepted | S0 |
-| [0008](0008-graceful-shutdown.md) | Graceful shutdown: readiness drain, Shutdown, then Close | Accepted | S0, S8 (probe timing, planned) |
-| [0009](0009-pgx-pool-with-lazy-connect.md) | pgx pool with lazy connect | Accepted | S0 |
-| [0010](0010-migrations-with-goose.md) | Migrations: goose, embedded, a one-shot step, a session advisory lock | Accepted | S0, S3 (roles, planned) |
-| [0011](0011-image-and-ci.md) | Distroless static image, CI lint set, SHA-pinned actions, one test job | Accepted | S0 |
+| [0001](0001-record-decisions-as-madr-adrs.md) | Record decisions as MADR ADRs, one per decision | Accepted | M0 |
+| [0002](0002-openai-compatible-api-and-error-envelope.md) | OpenAI-compatible API and error envelope | Accepted | M0 (envelope), M1 (planned) |
+| [0003](0003-postgres-system-of-record-redis-admission-only.md) | Postgres as the system of record, Redis only for admission control | Accepted | M0 (pool), M3, M6, M7, M11 (planned) |
+| [0004](0004-kafka-for-the-usage-pipeline.md) | Kafka (KRaft, franz-go) for the usage pipeline | Accepted | M6 (planned) |
+| [0005](0005-providers.md) | Providers: Ollama, Groq, OpenAI, Anthropic | Accepted | M1, M5 (planned) |
+| [0006](0006-deploy-targets.md) | Deploy targets: Compose, kind, EKS, GKE Autopilot, via Terraform | Accepted | M0 (Compose), M8, M12, M13 (planned) |
+| [0007](0007-module-layout.md) | Module layout: cmd/, internal/ by component, consumer-side interfaces | Accepted | M0 |
+| [0008](0008-graceful-shutdown.md) | Graceful shutdown: readiness drain, Shutdown, then Close | Accepted | M0, M8 (probe timing, planned) |
+| [0009](0009-pgx-pool-with-lazy-connect.md) | pgx pool with lazy connect | Accepted | M0 |
+| [0010](0010-migrations-with-goose.md) | Migrations: goose, embedded, a one-shot step, a session advisory lock | Accepted | M0, M3 (roles, planned) |
+| [0011](0011-image-and-ci.md) | Distroless static image, CI lint set, SHA-pinned actions, one test job | Accepted | M0 |

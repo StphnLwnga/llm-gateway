@@ -2,12 +2,12 @@
 
 - Status: Accepted
 - Date: 2026-10-10
-- Decided by: Stephen Lwanga (accepted the recommendation)
-- Implemented in: S0 (c): db6bd57, 2e41e28, 4a27ba3
+- Decision-makers: Stephen Lwanga
+- Implemented in: Milestone 0: db6bd57, 2e41e28, 4a27ba3
 
 ## Context
 
-The schema changes with almost every slice. Migrations must apply each change once, in order, on every environment, and must be safe when two runs start together: a Kubernetes Job can retry, and two deploys can overlap. The schema uses a Postgres extension (`vector`, migration 00001), and S3 adds row-level security policies and separate database roles.
+The schema grows with almost every feature. Migrations must apply each change once, in order, on every environment, and must be safe when two runs start together: a Kubernetes Job can retry, and two deploys can overlap. The schema uses a Postgres extension (`vector`, migration 00001), and milestone 3 adds row-level security policies and separate database roles.
 
 Two choices: the migration tool, and when migrations run.
 
@@ -54,7 +54,7 @@ run B: lock busy ─> retry 1s ... ─> lock ok ─> version 1 applied, nothing 
 ## Consequences
 
 - Good: concurrent runs are safe, and a crashed run never leaves a stuck lock.
-- Bad (open gap): in S0, `migrate` and the gateway connect as the same Postgres user, which the official image creates as a superuser. The gateway can run DDL at runtime, and a superuser bypasses row-level security. S3 adds two roles: a migrator role that owns the schema and runs DDL, and an app role that can only read and write rows. Because table owners also bypass row-level security unless the table uses `FORCE ROW LEVEL SECURITY`, the app role must not own the tables.
+- Bad (open gap): today `migrate` and the gateway connect as the same Postgres user, which the official image creates as a superuser. The gateway can run DDL at runtime, and a superuser bypasses row-level security. Milestone 3 adds two roles: a migrator role that owns the schema and runs DDL, and an app role that can only read and write rows. Because table owners also bypass row-level security unless the table uses `FORCE ROW LEVEL SECURITY`, the app role must not own the tables.
 - Bad: each migration needs a hand-written `Down` section.
 
 ## Links

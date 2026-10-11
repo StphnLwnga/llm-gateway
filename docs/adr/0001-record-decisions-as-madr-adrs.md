@@ -2,12 +2,12 @@
 
 - Status: Accepted
 - Date: 2026-10-11
-- Decided by: Stephen Lwanga
-- Implemented in: S0 (e)
+- Decision-makers: Stephen Lwanga
+- Implemented in: Milestone 0
 
 ## Context
 
-The gateway is built in slices, and each slice makes design decisions that later slices depend on. A decision that lives only in a pull request thread or a chat is hard to find later, and its rejected options are lost. The repo needs one place where each decision, the options it beat, and the reasons are written down and reviewed like code.
+The gateway's design decisions build on each other: the data model depends on the storage choice, the deployment on the shutdown design, the pipeline on the broker. A decision that lives only in a pull request thread or a chat is hard to find later, and its rejected options are lost. The repo needs one place where each decision, the options it beat, and the reasons are written down and reviewed like code.
 
 ## Considered options
 
@@ -25,14 +25,14 @@ The gateway is built in slices, and each slice makes design decisions that later
 
 ## Decision outcome
 
-Chosen: MADR, in a trimmed form, with one ADR per decision. Each record has a title, Status, Date, Decided by, Context, Considered options, a pros and cons table, Decision outcome, Consequences and Links. The project decisions from 2026-10-10 are recorded now, as 0002 to 0006, even where the code comes in a later slice.
+Chosen: MADR, in a trimmed form, with one ADR per decision. Each record has a title, Status, Date, Decision-makers, Implemented in, Context, Considered options, a pros and cons table, Decision outcome, Consequences and Links. A decision is recorded when it is made, even when its code comes in a later milestone.
 
 Files are `docs/adr/NNNN-kebab-title.md`, and `docs/adr/README.md` is the index. MADR's default folder is `docs/decisions/`; this repo uses `docs/adr/`.
 
 ## Consequences
 
-- Good: every decision can be reviewed in the same pull request as the code it shapes. A later slice can link the exact record it builds on.
-- Good: a decision that is accepted but not built yet says so ("Implemented in: S6 (planned)"), so the status of the code is never implied by the record.
+- Good: every decision can be reviewed in the same pull request as the code it shapes. Later code and records can link the exact record they build on.
+- Good: a decision that is accepted but not built yet says so ("Implemented in: Milestone 6 (planned)"), so the status of the code is never implied by the record.
 - Bad: more files to keep current. A decision that changes needs a new ADR that supersedes the old one, not an edit in place.
 
 ## Links

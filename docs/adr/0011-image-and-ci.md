@@ -2,8 +2,8 @@
 
 - Status: Accepted
 - Date: 2026-10-11
-- Decided by: Stephen Lwanga (accepted the recommendation)
-- Implemented in: S0 (c): 4a27ba3, the image. S0 (d): a1d9a11, 6386ff3, 23f1210, 1973a1c, the CI and toolchain.
+- Decision-makers: Stephen Lwanga
+- Implemented in: Milestone 0: 4a27ba3 (the image), a1d9a11, 6386ff3, 23f1210, 1973a1c (CI and the toolchain).
 
 ## Context
 
@@ -29,12 +29,10 @@ Chosen: distroless static, non-root. Both binaries build with `CGO_ENABLED=0 -tr
 
 Chosen: `standard` plus the six. Settings in `.golangci.yml`:
 
-- `max-issues-per-linter: 0` and `max-same-issues: 0`. The default of 3 hid repeats: the first run reported 27 of 31 findings.
+- `max-issues-per-linter: 0` and `max-same-issues: 0`, so every finding is shown. The default of 3 hides repeats of the same message.
 - gosec G101 (hardcoded credentials) is excluded only in `_test.go` files. The tests use fake connection strings with a password, to prove the password is never printed.
 - Unchecked errors are decided per site, not with the `std-error-handling` preset. A `Close` error on a writer can mean lost data, and a preset cannot tell a writer from a reader. `srv.Close` after a timed-out `Shutdown` is joined into the returned error. `db.Close` after a successful migration is logged as a warning. The rest are explicit discards (`_ =`).
 - gosec G115 (integer overflow on conversion) is fixed with a range check in `postgres.Open`, not a `nolint` comment, because `Open` is exported ([0009](0009-pgx-pool-with-lazy-connect.md)).
-
-Result: 31 findings before (errcheck 13, noctx 8, gosec 5, revive 5), 0 after.
 
 ## D2: action references
 
@@ -42,9 +40,9 @@ Result: 31 findings before (errcheck 13, noctx 8, gosec 5, revive 5), 0 after.
 |---|---|---|
 | Tag (`@v7`) | Readable. Gets fixes automatically. | The tag can be moved to different code by the action's owner or by an attacker who takes over the account. The next run executes that code with the job's token. |
 | Full commit SHA with a `# vX.Y.Z` comment, plus Dependabot | Immutable: GitHub's guide calls a full-length SHA "currently the only way to use an action as an immutable release". Dependabot opens a pull request for each new version, and CI runs on it. | A pinned SHA never updates by itself; Dependabot pull requests must be reviewed. |
-| Fork or vendor each action (not presented at the decision, noted later) | Full control. | Every update is manual work. |
+| Fork or vendor each action | Full control. | Every update is manual work. |
 
-Chosen: full SHA pins with Dependabot weekly for GitHub Actions and Go modules. Each SHA was read from GitHub with `gh api` and `git ls-remote`. For an annotated tag, the pin is the commit (`refs/tags/v9.3.0^{}`), not the tag object.
+Chosen: full SHA pins with Dependabot weekly for GitHub Actions and Go modules. For an annotated tag, pin the commit the tag points to (`refs/tags/vX.Y.Z^{}`), not the tag object.
 
 ## D3: integration tests in CI
 
@@ -53,7 +51,7 @@ Chosen: full SHA pins with Dependabot weekly for GitHub Actions and Go modules. 
 | One `go test -race ./...` job, testcontainers on the runner's Docker | The same test code runs locally and in CI. Each integration test starts its own Postgres container, so tests share no state. | Slower: the Postgres package took 13.7 s in CI. Docker is needed locally. |
 | Separate unit and integration jobs | Faster feedback from unit tests. | Two jobs to keep in step; a package can drift into the wrong one. |
 | Skip integration tests in CI (`-short`) | The fastest CI. No Docker on the runner. | CI no longer runs the tests for the migration lock, readiness against a real Postgres, or password redaction in `postgres.Open`. Those behaviours would be checked only on a developer machine with Docker. |
-| GitHub service containers for Postgres (not presented at the decision, noted later) | Postgres starts before the job. | The tests connect differently in CI and locally. One shared database for all packages. |
+| GitHub service containers for Postgres | Postgres starts before the job. | The tests connect differently in CI and locally. One shared database for all packages. |
 
 Chosen: one race job with testcontainers. The tests skip without Docker locally, and fail when `CI` is set, so CI can never pass by skipping them.
 

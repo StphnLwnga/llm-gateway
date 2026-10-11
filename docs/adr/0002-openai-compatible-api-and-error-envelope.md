@@ -2,8 +2,8 @@
 
 - Status: Accepted
 - Date: 2026-10-10
-- Decided by: Stephen Lwanga
-- Implemented in: S0 (b): the error envelope, `GET /v1/models` stub. S1 (planned): `POST /v1/chat/completions`.
+- Decision-makers: Stephen Lwanga
+- Implemented in: Milestone 0: the error envelope, the `GET /v1/models` stub. Milestone 1 (planned): `POST /v1/chat/completions`.
 
 ## Context
 
@@ -37,9 +37,9 @@ Chosen: option 1. Every error response is `{"error":{"message","type","param","c
 ## Consequences
 
 - Good: an OpenAI SDK pointed at the gateway raises its normal exception types for gateway errors.
-- Good: a test asserts the exact 404 body, and a mutation check (message taken from `err.Error()` again) failed 4 tests, so the public and internal split is covered.
+- Good: a test asserts the exact 404 body, and the error tests fail if a client message comes from `err.Error()`.
 - Bad: the 405 message is the gateway's own text. OpenAI's 405 body is not verified.
-- Bad: provider errors (S1, S4, S5) must be translated into this envelope, including Anthropic's error types, so the mapping table grows with each adapter.
+- Bad: provider errors (M1, M4, M5) must be translated into this envelope, including Anthropic's error types, so the mapping table grows with each adapter.
 
 ## Links
 

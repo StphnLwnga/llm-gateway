@@ -2,8 +2,8 @@
 
 - Status: Accepted
 - Date: 2026-10-10
-- Decided by: Stephen Lwanga
-- Implemented in: S0 (c): Compose. S8 (planned): kind with a Kustomize base. S12 (planned): EKS. S13 (planned): GKE Autopilot.
+- Decision-makers: Stephen Lwanga
+- Implemented in: Milestone 0: Compose. Milestone 8 (planned): kind with a Kustomize base. Milestone 12 (planned): EKS. Milestone 13 (planned): GKE Autopilot.
 
 ## Context
 
@@ -27,17 +27,17 @@ The gateway runs as two processes (`cmd/gateway`, `cmd/worker`) with Postgres, R
 
 Chosen: option 1.
 
-- **Compose** (`deploy/compose.yaml`, built in S0): Postgres, the migration step and the gateway.
-- **kind** (S8): the Kustomize base and a kind overlay, Strimzi for Kafka, probes, PDB and HPA. A CI job runs a smoke test with a streamed request.
-- **EKS** (S12) and **GKE Autopilot** (S13): an overlay each, with Terraform for the cluster, registry, database and key management.
+- **Compose** (`deploy/compose.yaml`, built in M0): Postgres, the migration step and the gateway.
+- **kind** (M8): the Kustomize base and a kind overlay, Strimzi for Kafka, probes, PDB and HPA. A CI job runs a smoke test with a streamed request.
+- **EKS** (M12) and **GKE Autopilot** (M13): an overlay each, with Terraform for the cluster, registry, database and key management.
 - Each cloud stack is applied, measured and destroyed the same day. EKS and GKE both charge $0.10 per cluster per hour for the cluster. GKE's free tier gives $74.40 in monthly credits per billing account, which covers one Autopilot or zonal cluster.
 
 ## Consequences
 
 - Good: the drain, probe and shutdown settings ([0008](0008-graceful-shutdown.md)) are tested on kind before they reach a cloud.
-- Good: cloud spend is bounded by the hours a stack exists, and S12 and S13 record the actual cost.
-- Bad: no environment stays up between slices, so every cloud test pays the cluster creation time.
-- Bad: Strimzi on EKS vs Amazon MSK is a separate cost decision, made in S12.
+- Good: cloud spend is bounded by the hours a stack exists, and milestones 12 and 13 record the actual cost.
+- Bad: no cloud environment stays up between test runs, so every cloud test pays the cluster creation time.
+- Bad: Strimzi on EKS vs Amazon MSK is a separate cost decision, made in milestone 12.
 
 ## Links
 

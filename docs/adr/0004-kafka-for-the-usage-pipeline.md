@@ -2,16 +2,16 @@
 
 - Status: Accepted
 - Date: 2026-10-10
-- Decided by: Stephen Lwanga
-- Implemented in: S6 (planned): outbox relay, topics, consumer groups. S8 (planned): Strimzi on kind. S12 (planned): Strimzi on EKS vs Amazon MSK.
+- Decision-makers: Stephen Lwanga
+- Implemented in: Milestone 6 (planned): outbox relay, topics, consumer groups. Milestone 8 (planned): Strimzi on kind. Milestone 12 (planned): Strimzi on EKS vs Amazon MSK.
 
 ## Context
 
-Every request produces a usage event: tenant, model, tokens, price charged, latency. Some tenants also opt in to a redacted request log. These events leave the request path through a transactional outbox (S6), so the client never waits for them. Three readers need the same events:
+Every request produces a usage event: tenant, model, tokens, price charged, latency. Some tenants also opt in to a redacted request log. These events leave the request path through a transactional outbox (M6), so the client never waits for them. Three readers need the same events:
 
 - **billing**, which writes the Postgres ledger, idempotent on `request_id`
 - **analytics**, which aggregates usage for dashboards
-- **eval-set building**, which reads the opt-in request log (S9)
+- **eval-set building**, which reads the opt-in request log (M9)
 
 Each reader must keep its own position, so a slow or failed reader does not hold back the others. The ledger must be rebuildable from the events. Events for one tenant must stay in order.
 
@@ -38,7 +38,7 @@ The current event volume is small (see the estimates in [docs/design.md](../desi
 
 Chosen: Kafka in KRaft mode. Both options meet the log requirements: independent readers with their own positions, replay, and ordered events per tenant. Kafka wins on two points:
 
-1. **Managed services on both cloud targets.** The deploy targets ([0006](0006-deploy-targets.md)) are EKS and GKE. Both clouds offer first-party Kafka services, so the S12 and S13 slices can compare a managed broker with Strimzi on the same protocol and client. JetStream has no first-party service on either cloud.
+1. **Managed services on both cloud targets.** The deploy targets ([0006](0006-deploy-targets.md)) are EKS and GKE. Both clouds offer first-party Kafka services, so the EKS and GKE deployments can compare a managed broker with Strimzi on the same protocol and client. JetStream has no first-party service on either cloud.
 2. **Downstream consumers.** Usage data feeds billing, analytics and eval sets. Kafka Connect and schema registries let a new consumer, such as a warehouse sink, be added without new gateway code.
 
 Topics:
@@ -60,9 +60,9 @@ Chosen: franz-go.
 
 - Good: billing, analytics and eval-set building scale and fail independently. A billing bug can be fixed and the ledger rebuilt by replaying `usage.v1`.
 - Good: the same client and topics run on Compose (the `apache/kafka` image, KRaft single node), on kind with Strimzi, and on a managed broker.
-- Bad: the local stack is heavier. S6 sets Compose memory limits for the broker and measures the whole stack.
-- Bad: a large tenant can make its partition hot, because the key is `tenant_id`. S6 measures partition skew.
-- Bad: more operating knowledge is needed than for JetStream: partitions, retention, consumer lag and rebalancing. S6 adds a consumer-lag metric.
+- Bad: the local stack is heavier. Milestone 6 sets Compose memory limits for the broker and measures the whole stack.
+- Bad: a large tenant can make its partition hot, because the key is `tenant_id`. Milestone 6 measures partition skew.
+- Bad: more operating knowledge is needed than for JetStream: partitions, retention, consumer lag and rebalancing. Milestone 6 adds a consumer-lag metric.
 
 ## Links
 

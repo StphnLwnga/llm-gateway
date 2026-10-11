@@ -2,8 +2,8 @@
 
 - Status: Accepted
 - Date: 2026-10-10
-- Decided by: Stephen Lwanga
-- Implemented in: S0 (c): the Postgres pool and migrations. S3, S6 (planned): tenants, keys, credentials, ledger, outbox. S7 (planned): Redis. S11 (planned): pgvector.
+- Decision-makers: Stephen Lwanga
+- Implemented in: Milestone 0: the Postgres pool and migrations. Milestones 3 and 6 (planned): tenants, keys, credentials, ledger, outbox. Milestone 7 (planned): Redis. Milestone 11 (planned): pgvector.
 
 ## Context
 
@@ -22,7 +22,7 @@ The gateway keeps two kinds of state with different needs.
 
 | Option | Pros | Cons |
 |---|---|---|
-| Postgres records, Redis admission | Each store does what it is good at. The outbox row commits in the same transaction as the request's records (transactional outbox, S6). Redis Lua scripts make a check-and-reserve atomic. Redis state can be rebuilt from the Postgres ledger. | Two stores to run. The Redis spend can drift from the ledger, so a reconciler is needed. |
+| Postgres records, Redis admission | Each store does what it is good at. The outbox row commits in the same transaction as the request's records (transactional outbox, M6). Redis Lua scripts make a check-and-reserve atomic. Redis state can be rebuilt from the Postgres ledger. | Two stores to run. The Redis spend can drift from the ledger, so a reconciler is needed. |
 | Postgres only | One store. No drift. | Every request adds row-lock writes on hot rows (a tenant's limit window and budget). Under concurrency those rows serialize, and the pool fills. |
 | Redis primary for spend | Fastest path. | A Redis failure between flushes loses spend that was already charged. The ledger is no longer the record of truth. |
 
@@ -30,14 +30,14 @@ The gateway keeps two kinds of state with different needs.
 
 Chosen: option 1.
 
-- Postgres is the system of record. pgvector (enabled by migration 00001) keeps the semantic cache (S11) in the same database, under the same tenant isolation as the other tables.
+- Postgres is the system of record. pgvector (enabled by migration 00001) keeps the semantic cache (M11) in the same database, under the same tenant isolation as the other tables.
 - Redis holds only state that can be lost and rebuilt: sliding-window limits, budget holds with a TTL, and the exact cache keyed by an HMAC per tenant.
 - A reconciler in `cmd/worker` rebuilds Redis spend from the Postgres ledger.
 
 ## Consequences
 
 - Good: the ledger has one source, so billing and analytics agree.
-- Good: losing Redis loses no record. What the client sees while Redis is down is decided in S7 (fail open or fail closed, per check).
+- Good: losing Redis loses no record. What the client sees while Redis is down is decided in milestone 7 (fail open or fail closed, per check).
 - Bad: the pool size per replica limits scale-out (`replicas x DB_MAX_CONNS` must stay below `max_connections`). See [0009](0009-pgx-pool-with-lazy-connect.md).
 - Bad: Redis spend lags the ledger by the reconciler interval.
 
