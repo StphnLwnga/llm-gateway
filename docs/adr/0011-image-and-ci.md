@@ -42,7 +42,7 @@ Result: 31 findings before (errcheck 13, noctx 8, gosec 5, revive 5), 0 after.
 |---|---|---|
 | Tag (`@v7`) | Readable. Gets fixes automatically. | The tag can be moved to different code by the action's owner or by an attacker who takes over the account. The next run executes that code with the job's token. |
 | Full commit SHA with a `# vX.Y.Z` comment, plus Dependabot | Immutable: GitHub's guide calls a full-length SHA "currently the only way to use an action as an immutable release". Dependabot opens a pull request for each new version, and CI runs on it. | A pinned SHA never updates by itself; Dependabot pull requests must be reviewed. |
-| Fork or vendor each action | Full control. | Every update is manual work. |
+| Fork or vendor each action (not presented at the decision, noted later) | Full control. | Every update is manual work. |
 
 Chosen: full SHA pins with Dependabot weekly for GitHub Actions and Go modules. Each SHA was read from GitHub with `gh api` and `git ls-remote`. For an annotated tag, the pin is the commit (`refs/tags/v9.3.0^{}`), not the tag object.
 
@@ -52,7 +52,8 @@ Chosen: full SHA pins with Dependabot weekly for GitHub Actions and Go modules. 
 |---|---|---|
 | One `go test -race ./...` job, testcontainers on the runner's Docker | The same test code runs locally and in CI. Each integration test starts its own Postgres container, so tests share no state. | Slower: the Postgres package took 13.7 s in CI. Docker is needed locally. |
 | Separate unit and integration jobs | Faster feedback from unit tests. | Two jobs to keep in step; a package can drift into the wrong one. |
-| GitHub service containers for Postgres | Postgres starts before the job. | The tests connect differently in CI and locally. One shared database for all packages. |
+| Skip integration tests in CI (`-short`) | The fastest CI. No Docker on the runner. | CI no longer runs the tests for the migration lock, readiness against a real Postgres, or password redaction in `postgres.Open`. Those behaviours would be checked only on a developer machine with Docker. |
+| GitHub service containers for Postgres (not presented at the decision, noted later) | Postgres starts before the job. | The tests connect differently in CI and locally. One shared database for all packages. |
 
 Chosen: one race job with testcontainers. The tests skip without Docker locally, and fail when `CI` is set, so CI can never pass by skipping them.
 
