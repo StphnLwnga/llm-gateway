@@ -169,6 +169,7 @@ Every pull request and every push to `main` runs four jobs in GitHub Actions (`.
 │   │   ├── openaicompat/    the adapter for OpenAI-compatible APIs (Groq, OpenAI), with recorded and constructed wire fixtures
 │   │   └── providertest/    the contract suite every adapter runs against a fake upstream
 │   ├── router/              model alias to providers, from an in-memory snapshot of the routes table
+│   ├── sse/                 Server-Sent Events writer with a write deadline per event, and heartbeats
 │   ├── store/
 │   │   └── postgres/        the connection pool, the readiness check, embedded migrations, the routes table
 │   └── telemetry/           the structured logger
