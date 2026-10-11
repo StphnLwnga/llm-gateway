@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -108,5 +109,40 @@ func TestAClientThatLeavesGivesErrClientGone(t *testing.T) {
 	_ = resp.Body.Close()
 	if err := <-result; !errors.Is(err, sse.ErrClientGone) {
 		t.Errorf("err = %v, want ErrClientGone", err)
+	}
+}
+
+// TestAnIdleGapDoesNotBreakLaterWritesOverHTTP2 covers the HTTP/2 rule in
+// ResponseController.SetWriteDeadline: a deadline that has passed cannot be
+// extended, so the writer must clear it after each write.
+func TestAnIdleGapDoesNotBreakLaterWritesOverHTTP2(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		s := sse.NewWriter(w, 200*time.Millisecond)
+		_ = s.Comment("first")
+		time.Sleep(500 * time.Millisecond) // the stream waits upstream for longer than the write timeout
+		if err := s.Done(); err != nil {
+			t.Errorf("write after an idle gap: %v", err)
+		}
+	}))
+	srv.EnableHTTP2 = true
+	srv.StartTLS()
+	t.Cleanup(srv.Close)
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.ProtoMajor != 2 {
+		t.Fatalf("protocol = %s, want HTTP/2", resp.Proto)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	if want := ": first\n\ndata: [DONE]\n\n"; string(b) != want {
+		t.Errorf("body = %q, want %q", b, want)
 	}
 }
