@@ -1,0 +1,28 @@
+: recorded from Groq (allam-2-7b) on 2026-10-11; ids and timestamps normalised
+
+data: {"id":"chatcmpl-normalized","object":"chat.completion.chunk","created":0,"model":"allam-2-7b","system_fingerprint":"fp_ff744b2c7a","choices":[{"index":0,"delta":{"role":"assistant","content":""},"logprobs":null,"finish_reason":null}],"x_groq":{"id":"req_normalized","seed":7}}
+
+data: {"id":"chatcmpl-normalized","object":"chat.completion.chunk","created":0,"model":"allam-2-7b","system_fingerprint":"fp_ff744b2c7a","choices":[{"index":0,"delta":{"content":"الأحمر"},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-normalized","object":"chat.completion.chunk","created":0,"model":"allam-2-7b","system_fingerprint":"fp_ff744b2c7a","choices":[{"index":0,"delta":{"content":"،"},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-normalized","object":"chat.completion.chunk","created":0,"model":"allam-2-7b","system_fingerprint":"fp_ff744b2c7a","choices":[{"index":0,"delta":{"content":" والأ"},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-normalized","object":"chat.completion.chunk","created":0,"model":"allam-2-7b","system_fingerprint":"fp_ff744b2c7a","choices":[{"index":0,"delta":{"content":"ز"},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-normalized","object":"chat.completion.chunk","created":0,"model":"allam-2-7b","system_fingerprint":"fp_ff744b2c7a","choices":[{"index":0,"delta":{"content":"رق"},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-normalized","object":"chat.completion.chunk","created":0,"model":"allam-2-7b","system_fingerprint":"fp_ff744b2c7a","choices":[{"index":0,"delta":{"content":"،"},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-normalized","object":"chat.completion.chunk","created":0,"model":"allam-2-7b","system_fingerprint":"fp_ff744b2c7a","choices":[{"index":0,"delta":{"content":" والأ"},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-normalized","object":"chat.completion.chunk","created":0,"model":"allam-2-7b","system_fingerprint":"fp_ff744b2c7a","choices":[{"index":0,"delta":{"content":"صفر"},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-normalized","object":"chat.completion.chunk","created":0,"model":"allam-2-7b","system_fingerprint":"fp_ff744b2c7a","choices":[{"index":0,"delta":{"content":" "},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-normalized","object":"chat.completion.chunk","created":0,"model":"allam-2-7b","system_fingerprint":"fp_ff744b2c7a","choices":[{"index":0,"delta":{},"logprobs":null,"finish_reason":"stop"}],"x_groq":{"id":"req_normalized","usage":{"queue_time":0.08329193,"prompt_tokens":16,"prompt_time":0.001039105,"completion_tokens":10,"completion_time":0.007396903,"total_tokens":26,"total_time":0.008436008}},"usage":{"queue_time":0.08329193,"prompt_tokens":16,"prompt_time":0.001039105,"completion_tokens":10,"completion_time":0.007396903,"total_tokens":26,"total_time":0.008436008}}
+
+data: {"id":"chatcmpl-normalized","object":"chat.completion.chunk","created":0,"model":"allam-2-7b","system_fingerprint":"fp_ff744b2c7a","choices":[],"usage":{"queue_time":0.08329193,"prompt_tokens":16,"prompt_time":0.001039105,"completion_tokens":10,"completion_time":0.007396903,"total_tokens":26,"total_time":0.008436008},"service_tier":"on_demand"}
+
+data: [DONE]
+
