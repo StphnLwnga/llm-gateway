@@ -58,6 +58,9 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	if cfg.GroqAPIKey != "" || cfg.OpenAIAPIKey != "" {
 		t.Errorf("provider keys are set by default")
 	}
+	if cfg.OllamaBaseURL != "" {
+		t.Errorf("OllamaBaseURL = %q by default, want empty (Ollama disabled)", cfg.OllamaBaseURL)
+	}
 	if cfg.GroqBaseURL != "https://api.groq.com/openai/v1" || cfg.OpenAIBaseURL != "https://api.openai.com/v1" {
 		t.Errorf("GroqBaseURL, OpenAIBaseURL = %q, %q; want the public endpoints", cfg.GroqBaseURL, cfg.OpenAIBaseURL)
 	}
@@ -164,12 +167,16 @@ func TestLoadReadsProviderKeysAndBaseURLs(t *testing.T) {
 	cfg, err := Load(env(map[string]string{
 		"GROQ_API_KEY": "gsk_test", "OPENAI_API_KEY": "sk-test",
 		"GROQ_BASE_URL": "http://fakeprovider:8081/v1", "OPENAI_BASE_URL": "https://proxy.example/v1",
+		"OLLAMA_BASE_URL": "http://host.docker.internal:11434",
 	}))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
 	if cfg.GroqAPIKey != "gsk_test" || cfg.OpenAIAPIKey != "sk-test" {
 		t.Error("provider keys were not read")
+	}
+	if cfg.OllamaBaseURL != "http://host.docker.internal:11434" {
+		t.Errorf("OllamaBaseURL = %q", cfg.OllamaBaseURL)
 	}
 	if cfg.GroqBaseURL != "http://fakeprovider:8081/v1" || cfg.OpenAIBaseURL != "https://proxy.example/v1" {
 		t.Errorf("GroqBaseURL, OpenAIBaseURL = %q, %q", cfg.GroqBaseURL, cfg.OpenAIBaseURL)
@@ -207,6 +214,8 @@ func TestLoadRejectsInvalidSettings(t *testing.T) {
 		{"first byte timeout set but empty", map[string]string{"PROVIDER_FIRST_BYTE_TIMEOUT": ""}, "PROVIDER_FIRST_BYTE_TIMEOUT"},
 		{"groq base url without a scheme", map[string]string{"GROQ_BASE_URL": "api.groq.com/openai/v1"}, "GROQ_BASE_URL"},
 		{"openai base url with another scheme", map[string]string{"OPENAI_BASE_URL": "ftp://api.openai.com/v1"}, "OPENAI_BASE_URL"},
+		{"ollama base url set but empty", map[string]string{"OLLAMA_BASE_URL": ""}, "OLLAMA_BASE_URL"},
+		{"ollama base url without a scheme", map[string]string{"OLLAMA_BASE_URL": "localhost:11434"}, "OLLAMA_BASE_URL"},
 		{"openai base url set but empty", map[string]string{"OPENAI_BASE_URL": ""}, "OPENAI_BASE_URL"},
 		{"database url set but empty", map[string]string{"DATABASE_URL": ""}, "DATABASE_URL"},
 		{"max conns zero", map[string]string{"DB_MAX_CONNS": "0"}, "DB_MAX_CONNS"},

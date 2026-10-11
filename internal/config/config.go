@@ -69,6 +69,9 @@ type Config struct {
 	GroqBaseURL   string
 	OpenAIAPIKey  Secret
 	OpenAIBaseURL string
+
+	// OllamaBaseURL enables Ollama when set; Ollama needs no key.
+	OllamaBaseURL string
 }
 
 // Addr is the listen address for the HTTP server.
@@ -152,6 +155,9 @@ func Load(lookup func(key string) (string, bool)) (Config, error) {
 	cfg.GroqBaseURL = baseURL("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
 	cfg.OpenAIAPIKey = Secret(get("OPENAI_API_KEY", ""))
 	cfg.OpenAIBaseURL = baseURL("OPENAI_BASE_URL", "https://api.openai.com/v1")
+	if _, ok := lookup("OLLAMA_BASE_URL"); ok {
+		cfg.OllamaBaseURL = baseURL("OLLAMA_BASE_URL", "http://localhost:11434")
+	}
 
 	if v, ok := lookup("DATABASE_URL"); ok && v != "" {
 		cfg.DatabaseURL = Secret(v)
