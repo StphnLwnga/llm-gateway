@@ -35,6 +35,9 @@ design is in `docs/design.md` and the decisions are in `docs/adr/`.
   `{"error": {"message", "type", "param", "code"}}`. Packages return
   sentinel errors (`errors.Is`); only the HTTP edge maps an error to a
   status code and that shape.
+- **Comments.** Comments say why, only where the code cannot. No concept
+  explanations (those go in `docs/`), no restating the code. Exported doc
+  comments are one line unless a contract needs more.
 
 ## Checks before every commit
 
