@@ -61,7 +61,7 @@ func (h *Handler) routes() []route {
 }
 
 // healthz never checks a dependency: a database outage must not restart every pod.
-func (h *Handler) healthz(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) healthz(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -96,7 +96,7 @@ type model struct {
 }
 
 // models is a stub until the router (S1) knows the model aliases.
-func (h *Handler) models(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) models(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, modelList{Object: "list", Data: []model{}})
 }
 

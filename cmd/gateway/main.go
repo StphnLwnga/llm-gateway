@@ -20,7 +20,7 @@ import (
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	context.AfterFunc(ctx, stop) // a second signal kills the process at once
-	err := run(ctx, os.LookupEnv, os.Stdout, os.Stderr)
+	err := run(ctx, os.LookupEnv, os.Stdout)
 	stop()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "gateway: %v\n", err)
@@ -28,8 +28,8 @@ func main() {
 	}
 }
 
-// run is the whole program; tests call it with fakes. stderr is unused: logs go to stdout.
-func run(ctx context.Context, getenv func(string) (string, bool), stdout, stderr io.Writer) error {
+// run is the whole program; tests call it with fakes.
+func run(ctx context.Context, getenv func(string) (string, bool), stdout io.Writer) error {
 	cfg, err := config.Load(getenv)
 	if err != nil {
 		return fmt.Errorf("invalid configuration:\n%w", err)

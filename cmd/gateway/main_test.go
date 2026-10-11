@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"io"
 	"net"
 	"strconv"
 	"strings"
@@ -22,7 +21,7 @@ func env(vars map[string]string) func(string) (string, bool) {
 func TestRunFailsOnInvalidConfig(t *testing.T) {
 	t.Parallel()
 	var stdout bytes.Buffer
-	err := run(t.Context(), env(map[string]string{"PORT": "not-a-port"}), &stdout, io.Discard)
+	err := run(t.Context(), env(map[string]string{"PORT": "not-a-port"}), &stdout)
 	if err == nil {
 		t.Fatal("run succeeded, want an error")
 	}
@@ -58,7 +57,7 @@ func TestRunLogsTheLoadedConfigAndStopsOnCancel(t *testing.T) {
 	var stdout bytes.Buffer
 	// Nothing listens on port 1: the pool is lazy, so run must still start and stop.
 	vars := map[string]string{"PORT": port, "LOG_LEVEL": "debug", "DATABASE_URL": "postgres://gw:pw@127.0.0.1:1/gateway"}
-	err := run(ctx, env(vars), &stdout, io.Discard)
+	err := run(ctx, env(vars), &stdout)
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}

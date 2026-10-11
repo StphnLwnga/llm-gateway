@@ -56,7 +56,7 @@ func TestLoadAppliesDefaults(t *testing.T) {
 
 func TestLoadRequiresDatabaseURL(t *testing.T) {
 	t.Parallel()
-	missing := func(key string) (string, bool) { return "", false }
+	missing := func(string) (string, bool) { return "", false }
 	_, err := Load(missing)
 	if err == nil || !strings.Contains(err.Error(), "DATABASE_URL") {
 		t.Errorf("Load without DATABASE_URL = %v, want an error naming DATABASE_URL", err)

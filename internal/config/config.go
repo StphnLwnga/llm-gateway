@@ -24,7 +24,7 @@ func (s Secret) String() string {
 }
 
 // Format implements fmt.Formatter, so every verb prints the placeholder.
-func (s Secret) Format(f fmt.State, verb rune) {
+func (s Secret) Format(f fmt.State, _ rune) {
 	_, _ = io.WriteString(f, s.String())
 }
 
