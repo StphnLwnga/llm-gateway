@@ -79,6 +79,7 @@ Every pull request and every push to `main` runs four jobs in GitHub Actions (`.
 ```text
 .
 ├── cmd/
+│   ├── fakeprovider/        the fake upstream as a server, for local and load tests
 │   ├── gateway/             the HTTP server: composition root, graceful shutdown
 │   └── gatewayctl/          one-shot admin commands: migrate up, down, status
 ├── internal/
