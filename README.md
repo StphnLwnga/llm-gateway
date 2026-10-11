@@ -75,17 +75,24 @@ Every pull request and every push to `main` runs four jobs in GitHub Actions (`.
 ## Project layout
 
 ```text
-cmd/gateway/                 the HTTP server: composition root, graceful shutdown
-cmd/gatewayctl/              one-shot admin commands: migrate up, down, status
-internal/config/             settings parsed into typed values; Secret redaction
-internal/httpapi/            routes, readiness checks, the OpenAI error shape, server timeouts
-internal/store/postgres/     the connection pool, the readiness check, embedded migrations
-internal/telemetry/          the structured logger
-deploy/docker/Dockerfile     two-stage build into a distroless, non-root image
-deploy/compose.yaml          the local stack: Postgres (pgvector), migrate, gateway
-readme_test.go               fails when this README misses a setting, route or package
-docs/design.md               the system design
-docs/adr/                    architecture decision records
-.github/                     CI workflow, Dependabot, pull request template
-.golangci.yml                lint settings
+.
+├── cmd/
+│   ├── gateway/             the HTTP server: composition root, graceful shutdown
+│   └── gatewayctl/          one-shot admin commands: migrate up, down, status
+├── internal/
+│   ├── config/              settings parsed into typed values; Secret redaction
+│   ├── httpapi/             routes, readiness checks, the OpenAI error shape, server timeouts
+│   ├── store/
+│   │   └── postgres/        the connection pool, the readiness check, embedded migrations
+│   └── telemetry/           the structured logger
+├── deploy/
+│   ├── docker/
+│   │   └── Dockerfile       two-stage build into a distroless, non-root image
+│   └── compose.yaml         the local stack: Postgres (pgvector), migrate, gateway
+├── docs/
+│   ├── design.md            the system design
+│   └── adr/                 architecture decision records
+├── .github/                 CI workflow, Dependabot, pull request template
+├── .golangci.yml            lint settings
+└── readme_test.go           fails when this README misses a setting, route or package
 ```

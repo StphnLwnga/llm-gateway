@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -83,10 +84,61 @@ func TestREADMEDocumentsEveryPackage(t *testing.T) {
 	if len(dirs) == 0 {
 		t.Fatal("found no Go packages")
 	}
-	lines := readmeLines(t)
+	paths := layoutPaths(t, readmeLines(t))
 	for dir := range dirs {
-		if !hasLinePrefix(lines, dir+"/ ") {
-			t.Errorf("README.md project layout does not mention %s/", dir)
+		if !paths[dir+"/"] {
+			t.Errorf("README.md project layout does not list %s/", dir)
 		}
 	}
+}
+
+// layoutPaths rebuilds each full path from the indent depth of the tree under
+// "## Project layout", so an entry nested under the wrong folder does not count.
+func layoutPaths(t *testing.T, lines []string) map[string]bool {
+	t.Helper()
+	start := slices.Index(lines, "## Project layout")
+	if start < 0 {
+		t.Fatal("README.md has no Project layout section")
+	}
+	paths := map[string]bool{}
+	var stack []string
+	inTree := false
+	for _, l := range lines[start+1:] {
+		switch {
+		case !inTree && l == "```text":
+			inTree = true
+			continue
+		case !inTree:
+			continue
+		case l == "```":
+			return paths
+		case l == ".":
+			continue
+		}
+		depth := 0
+		rest := l
+		for {
+			r, ok := strings.CutPrefix(rest, "│   ")
+			if !ok {
+				r, ok = strings.CutPrefix(rest, "    ")
+			}
+			if !ok {
+				break
+			}
+			rest = r
+			depth++
+		}
+		name, ok := strings.CutPrefix(rest, "├── ")
+		if !ok {
+			name, ok = strings.CutPrefix(rest, "└── ")
+		}
+		if !ok || depth > len(stack) {
+			t.Fatalf("README.md project layout: malformed tree line %q", l)
+		}
+		name, _, _ = strings.Cut(name, " ")
+		stack = append(stack[:depth], name)
+		paths[strings.Join(stack, "")] = true
+	}
+	t.Fatal("README.md project layout tree is not closed")
+	return nil
 }
