@@ -308,6 +308,9 @@ func TestThinkingIsNotForwarded(t *testing.T) {
 	if text(evs) != "Blue." {
 		t.Errorf("text = %q, want only the content %q", text(evs), "Blue.")
 	}
+	if len(evs) == 0 || !evs[0].Progress || evs[0].Delta != "" {
+		t.Errorf("first event = %+v, want a progress event for the thinking line", evs)
+	}
 }
 
 func TestRecordedFixtures(t *testing.T) {

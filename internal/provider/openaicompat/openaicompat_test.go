@@ -432,3 +432,25 @@ func TestTheKeyIsSentAndNeverPrinted(t *testing.T) {
 		}
 	}
 }
+
+func TestReasoningDeltasArriveAsProgressEvents(t *testing.T) {
+	t.Parallel()
+	// recorded from Groq (gpt-oss): 29 reasoning deltas and no content
+	a, _ := serve(t, "text/event-stream", fixture(t, "groq_reasoning_stream_recorded.sse"))
+	evs, err := collect(t, a)
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	progress := 0
+	for _, e := range evs {
+		if e.Progress {
+			progress++
+			if e.Delta != "" || e.Usage != nil || e.FinishReason != "" {
+				t.Errorf("a progress event carries content: %+v", e)
+			}
+		}
+	}
+	if progress != 29 {
+		t.Errorf("got %d progress events, want 29 (one per reasoning delta)", progress)
+	}
+}

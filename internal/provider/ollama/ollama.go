@@ -58,7 +58,7 @@ type request struct {
 type response struct {
 	Message struct {
 		Content string `json:"content"`
-		// Thinking is not forwarded; see the reasoning note for the watchdog.
+		// Thinking is not forwarded; it only marks progress.
 		Thinking string `json:"thinking"`
 	} `json:"message"`
 	Done               bool   `json:"done"`
@@ -153,10 +153,11 @@ func (a *Adapter) Stream(ctx context.Context, req provider.Request, fn func(prov
 			return err
 		}
 		if !r.Done {
-			if r.Message.Content == "" {
+			ev := provider.Event{Delta: r.Message.Content, Progress: r.Message.Content == "" && r.Message.Thinking != ""}
+			if ev.Delta == "" && !ev.Progress {
 				continue
 			}
-			if err := fn(provider.Event{Delta: r.Message.Content}); err != nil {
+			if err := fn(ev); err != nil {
 				return err
 			}
 			continue

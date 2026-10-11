@@ -53,6 +53,10 @@ type Event struct {
 	Delta        string
 	Usage        *Usage
 	FinishReason string
+
+	// Progress marks an event with no content: the model is working, for
+	// example reasoning, so a liveness deadline can reset.
+	Progress bool
 }
 
 // Response is a complete, non-streamed answer.

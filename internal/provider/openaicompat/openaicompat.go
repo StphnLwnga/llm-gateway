@@ -116,7 +116,8 @@ type chatResponse struct {
 type chunk struct {
 	Choices []struct {
 		Delta struct {
-			Content string `json:"content"`
+			Content   string `json:"content"`
+			Reasoning string `json:"reasoning"` // Groq reasoning models
 		} `json:"delta"`
 		FinishReason *string `json:"finish_reason"`
 	} `json:"choices"`
@@ -227,7 +228,7 @@ func (a *Adapter) Stream(ctx context.Context, req provider.Request, fn func(prov
 		if u != nil {
 			final = u
 		}
-		if ev.Delta != "" || ev.FinishReason != "" {
+		if ev.Delta != "" || ev.FinishReason != "" || ev.Progress {
 			return false, fn(ev)
 		}
 		return false, nil
@@ -277,6 +278,7 @@ func (a *Adapter) parse(payload string) (provider.Event, *usage, error) {
 	var ev provider.Event
 	if len(c.Choices) > 0 {
 		ev.Delta = c.Choices[0].Delta.Content
+		ev.Progress = ev.Delta == "" && c.Choices[0].Delta.Reasoning != ""
 		if fr := c.Choices[0].FinishReason; fr != nil {
 			ev.FinishReason = *fr
 		}
