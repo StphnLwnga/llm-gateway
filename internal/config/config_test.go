@@ -49,6 +49,12 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	if cfg.DBMaxConns != 10 {
 		t.Errorf("DBMaxConns = %d, want 10", cfg.DBMaxConns)
 	}
+	if cfg.ProviderConnectTimeout != 5*time.Second {
+		t.Errorf("ProviderConnectTimeout = %v, want 5s", cfg.ProviderConnectTimeout)
+	}
+	if cfg.ProviderFirstByteTimeout != 60*time.Second {
+		t.Errorf("ProviderFirstByteTimeout = %v, want 60s", cfg.ProviderFirstByteTimeout)
+	}
 	if string(cfg.DatabaseURL) != testDSN {
 		t.Errorf("DatabaseURL was not read")
 	}
@@ -135,6 +141,18 @@ func TestLoadParsesDurations(t *testing.T) {
 	}
 }
 
+func TestLoadParsesProviderTimeouts(t *testing.T) {
+	t.Parallel()
+	cfg, err := Load(env(map[string]string{"PROVIDER_CONNECT_TIMEOUT": "2s", "PROVIDER_FIRST_BYTE_TIMEOUT": "1m30s"}))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.ProviderConnectTimeout != 2*time.Second || cfg.ProviderFirstByteTimeout != 90*time.Second {
+		t.Errorf("ProviderConnectTimeout, ProviderFirstByteTimeout = %v, %v; want 2s, 1m30s",
+			cfg.ProviderConnectTimeout, cfg.ProviderFirstByteTimeout)
+	}
+}
+
 func TestLoadRejectsInvalidSettings(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -156,6 +174,11 @@ func TestLoadRejectsInvalidSettings(t *testing.T) {
 		{"drain delay set but empty", map[string]string{"DRAIN_DELAY": ""}, "DRAIN_DELAY"},
 		{"shutdown timeout not a duration", map[string]string{"SHUTDOWN_TIMEOUT": "soon"}, "SHUTDOWN_TIMEOUT"},
 		{"shutdown timeout negative", map[string]string{"SHUTDOWN_TIMEOUT": "-20s"}, "SHUTDOWN_TIMEOUT"},
+		{"connect timeout zero", map[string]string{"PROVIDER_CONNECT_TIMEOUT": "0s"}, "PROVIDER_CONNECT_TIMEOUT"},
+		{"connect timeout negative", map[string]string{"PROVIDER_CONNECT_TIMEOUT": "-5s"}, "PROVIDER_CONNECT_TIMEOUT"},
+		{"connect timeout without a unit", map[string]string{"PROVIDER_CONNECT_TIMEOUT": "5"}, "PROVIDER_CONNECT_TIMEOUT"},
+		{"first byte timeout zero", map[string]string{"PROVIDER_FIRST_BYTE_TIMEOUT": "0s"}, "PROVIDER_FIRST_BYTE_TIMEOUT"},
+		{"first byte timeout set but empty", map[string]string{"PROVIDER_FIRST_BYTE_TIMEOUT": ""}, "PROVIDER_FIRST_BYTE_TIMEOUT"},
 		{"database url set but empty", map[string]string{"DATABASE_URL": ""}, "DATABASE_URL"},
 		{"max conns zero", map[string]string{"DB_MAX_CONNS": "0"}, "DB_MAX_CONNS"},
 		{"max conns negative", map[string]string{"DB_MAX_CONNS": "-3"}, "DB_MAX_CONNS"},

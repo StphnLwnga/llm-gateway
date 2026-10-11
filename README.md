@@ -54,6 +54,8 @@ Settings come from environment variables. Both binaries, `gateway` and `gatewayc
 | `LOG_FORMAT` | `json` | `json` or `text` |
 | `DRAIN_DELAY` | `0s` | A Go duration of 0 or more, for example `5s`. After SIGTERM, how long `/readyz` returns 503 while the server still serves, so the load balancer stops sending traffic. |
 | `SHUTDOWN_TIMEOUT` | `20s` | A Go duration of 0 or more. How long in-flight requests get to finish after the drain. Keep `DRAIN_DELAY` plus `SHUTDOWN_TIMEOUT` below the Kubernetes grace period (30s by default). |
+| `PROVIDER_CONNECT_TIMEOUT` | `5s` | A Go duration above 0. How long to wait for a TCP connection to a provider. |
+| `PROVIDER_FIRST_BYTE_TIMEOUT` | `60s` | A Go duration above 0. How long to wait for a provider's response headers. There is no limit on the whole response, because a streamed answer can run for minutes. The default leaves room for a local model that has to load before it answers. |
 
 ## Shutdown
 

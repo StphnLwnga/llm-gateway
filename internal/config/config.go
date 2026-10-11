@@ -57,6 +57,11 @@ type Config struct {
 
 	DatabaseURL Secret
 	DBMaxConns  int
+
+	// ProviderConnectTimeout bounds the TCP connect to a provider.
+	ProviderConnectTimeout time.Duration
+	// ProviderFirstByteTimeout bounds the wait for a provider's response headers.
+	ProviderFirstByteTimeout time.Duration
 }
 
 // Addr is the listen address for the HTTP server.
@@ -115,6 +120,18 @@ func Load(lookup func(key string) (string, bool)) (Config, error) {
 	}
 	cfg.DrainDelay = duration("DRAIN_DELAY", "0s")
 	cfg.ShutdownTimeout = duration("SHUTDOWN_TIMEOUT", "20s")
+
+	// A zero transport timeout means no limit, so these must be positive.
+	positive := func(key, def string) time.Duration {
+		raw := get(key, def)
+		d, err := time.ParseDuration(raw)
+		if err != nil || d <= 0 {
+			errs = append(errs, fmt.Errorf("%s %q: must be a duration above 0, for example %s", key, raw, def))
+		}
+		return d
+	}
+	cfg.ProviderConnectTimeout = positive("PROVIDER_CONNECT_TIMEOUT", "5s")
+	cfg.ProviderFirstByteTimeout = positive("PROVIDER_FIRST_BYTE_TIMEOUT", "60s")
 
 	if v, ok := lookup("DATABASE_URL"); ok && v != "" {
 		cfg.DatabaseURL = Secret(v)
