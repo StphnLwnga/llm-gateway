@@ -39,15 +39,26 @@ func providers(ctx context.Context, cfg config.Config, client *http.Client, log 
 	return out
 }
 
-// routedModels lists the router's aliases in the HTTP API's model shape.
-type routedModels struct {
+// routing serves the router's snapshot in the HTTP API's types.
+type routing struct {
 	routes *router.Router
 }
 
-func (m routedModels) Models() []httpapi.Model {
+func (r routing) Models() []httpapi.Model {
 	var out []httpapi.Model
-	for _, rm := range m.routes.Models() {
-		out = append(out, httpapi.Model{ID: rm.Alias, Created: rm.Created})
+	for _, m := range r.routes.Models() {
+		out = append(out, httpapi.Model{ID: m.Alias, Created: m.Created})
+	}
+	return out
+}
+
+func (r routing) Resolve(alias string) []httpapi.Target {
+	var out []httpapi.Target
+	for _, t := range r.routes.Resolve(alias) {
+		out = append(out, httpapi.Target{
+			ProviderName: t.Route.Provider, Provider: t.Provider, UpstreamModel: t.Route.UpstreamModel,
+			DefaultMaxTokens: t.Route.DefaultMaxTokens, MaxMaxTokens: t.Route.MaxMaxTokens,
+		})
 	}
 	return out
 }

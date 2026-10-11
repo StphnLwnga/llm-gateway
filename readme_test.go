@@ -53,7 +53,7 @@ func TestREADMEDocumentsEverySetting(t *testing.T) {
 }
 
 func TestREADMEDocumentsEveryRoute(t *testing.T) {
-	routes := httpapi.New(slog.New(slog.DiscardHandler), nil).Routes()
+	routes := httpapi.New(slog.New(slog.DiscardHandler), httpapi.Deps{}).Routes()
 	if len(routes) == 0 {
 		t.Fatal("httpapi registered no routes")
 	}

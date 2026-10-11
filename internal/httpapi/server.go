@@ -32,15 +32,30 @@ const checkTimeout = 2 * time.Second
 type Handler struct {
 	log      *slog.Logger
 	models   ModelLister
+	resolver Resolver
+	chat     ChatConfig
 	checks   []Checker
 	draining atomic.Bool
 	mux      *http.ServeMux
 }
 
-// New returns the gateway's handler. models may be nil, which lists nothing;
-// checks run on every GET /readyz.
-func New(log *slog.Logger, models ModelLister, checks ...Checker) *Handler {
-	h := &Handler{log: log, models: models, checks: checks, mux: http.NewServeMux()}
+// Deps are the parts the handler serves from. A nil Models lists nothing,
+// and a nil Routes resolves nothing.
+type Deps struct {
+	Models ModelLister
+	Routes Resolver
+	Chat   ChatConfig
+}
+
+// New returns the gateway's handler; checks run on every GET /readyz.
+func New(log *slog.Logger, deps Deps, checks ...Checker) *Handler {
+	if deps.Chat.MaxBodyBytes == 0 {
+		deps.Chat.MaxBodyBytes = 4 << 20
+	}
+	if deps.Chat.HeartbeatInterval == 0 {
+		deps.Chat.HeartbeatInterval = 10 * time.Second
+	}
+	h := &Handler{log: log, models: deps.Models, resolver: deps.Routes, chat: deps.Chat, checks: checks, mux: http.NewServeMux()}
 	for _, rt := range h.routes() {
 		h.mux.HandleFunc(rt.method+" "+rt.path, rt.handler)
 		// Without this, ServeMux answers a wrong method with a plain-text 405.
@@ -79,6 +94,7 @@ func (h *Handler) routes() []route {
 		{http.MethodGet, "/healthz", h.healthz},
 		{http.MethodGet, "/readyz", h.readyz},
 		{http.MethodGet, "/v1/models", h.listModels},
+		{http.MethodPost, "/v1/chat/completions", h.chatCompletions},
 	}
 }
 

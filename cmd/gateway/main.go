@@ -50,10 +50,18 @@ func run(ctx context.Context, getenv func(string) (string, bool), stdout io.Writ
 		"provider_connect_timeout", cfg.ProviderConnectTimeout.String(),
 		"provider_first_byte_timeout", cfg.ProviderFirstByteTimeout.String(),
 		"routes_refresh_interval", cfg.RoutesRefreshInterval.String(),
+		"provider_first_token_timeout", cfg.ProviderFirstTokenTimeout.String(),
+		"stream_stall_timeout", cfg.StreamStallTimeout.String(),
+		"status_hold", cfg.StatusHold.String(),
+		"heartbeat_interval", cfg.HeartbeatInterval.String(),
+		"request_max_bytes", cfg.RequestMaxBytes,
 	)
 
 	client := provider.NewHTTPClient(cfg.ProviderConnectTimeout, cfg.ProviderFirstByteTimeout)
 	registry := providers(ctx, cfg, client, log)
+	for name, p := range registry {
+		registry[name] = &provider.Watchdog{Name: name, Inner: p, FirstEvent: cfg.ProviderFirstTokenTimeout, Stall: cfg.StreamStallTimeout}
+	}
 	log.InfoContext(ctx, "providers ready", "names", slices.Sorted(maps.Keys(registry)))
 
 	pool, err := postgres.Open(ctx, cfg.DatabaseURL, cfg.DBMaxConns)
@@ -70,7 +78,11 @@ func run(ctx context.Context, getenv func(string) (string, bool), stdout io.Writ
 	}()
 	defer func() { <-refreshed }() // runs before pool.Close, so no refresh is left using the pool
 
-	api := httpapi.New(log, routedModels{routes}, postgres.Pinger{Pool: pool}, routes)
+	api := httpapi.New(log, httpapi.Deps{
+		Models: routing{routes},
+		Routes: routing{routes},
+		Chat:   httpapi.ChatConfig{StatusHold: cfg.StatusHold, HeartbeatInterval: cfg.HeartbeatInterval, MaxBodyBytes: cfg.RequestMaxBytes},
+	}, postgres.Pinger{Pool: pool}, routes)
 	srv := httpapi.NewServer(cfg.Addr(), api)
 	srv.ErrorLog = slog.NewLogLogger(log.Handler(), slog.LevelWarn)
 

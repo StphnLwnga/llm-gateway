@@ -32,6 +32,7 @@ Migrations run as a separate one-shot step (`gatewayctl migrate up`), never when
 | `GET /healthz` | Liveness. `200 {"status":"ok"}` while the process serves HTTP. It never checks a dependency. |
 | `GET /readyz` | Readiness. `200 {"status":"ready"}` when every readiness check passes; `503` while the server drains, when Postgres does not answer, or until the routes table has loaded once. |
 | `GET /v1/models` | The OpenAI model list: every alias in the routes table that has at least one enabled route with an enabled provider. `created` is the earliest route's creation time; `owned_by` is `llm-gateway`. |
+| `POST /v1/chat/completions` | OpenAI chat completions, streamed (SSE) or not. `model` is a route alias. See Chat completions below. |
 
 Every error uses the OpenAI error shape. An unknown route returns `404`, and a known path with the wrong method returns `405` with an `Allow` header:
 
@@ -67,6 +68,42 @@ Settings come from environment variables. Both binaries, `gateway` and `gatewayc
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | An http or https URL: OpenAI's API, or a compatible endpoint |
 | `OLLAMA_BASE_URL` | none | An http or https URL, for example `http://localhost:11434`. Ollama is enabled only when this is set; it needs no key. From inside Compose, Ollama on the host is `http://host.docker.internal:11434`. |
 | `ROUTES_REFRESH_INTERVAL` | `10s` | A Go duration above 0. How often the gateway reloads the routes table into memory. A change made with `gatewayctl routes` takes effect within one interval. |
+
+## Chat completions
+
+`POST /v1/chat/completions` takes the OpenAI request shape, so the OpenAI SDKs work unchanged with `base_url` pointed at the gateway. `model` is a route alias; an unknown alias returns `404` with code `model_not_found`. The gateway uses the alias's first route; failover across routes comes in milestone 4.
+
+Supported fields: `messages` (string content, or arrays of text parts), `stream`, `stream_options.include_usage`, `temperature`, `top_p`, `max_completion_tokens` or `max_tokens`, `stop`, `seed`, and `n` of 1. Unknown fields are ignored. `tools`, `response_format` and `logprobs` return `400` until they are supported. Without a token limit, the route's default applies; a limit above the route's maximum returns `400`.
+
+**Streaming and the status.** A streamed request holds its HTTP status for up to `STATUS_HOLD` (3s):
+
+```text
+first token within the hold  -> 200, then the tokens
+an upstream error first      -> a real status: 429 (with Retry-After), 502, 504 or 400
+the hold passes              -> 200, then ": heartbeat" comments every HEARTBEAT_INTERVAL until the first token
+an error after the 200       -> data: {"error":{...}} and the stream ends, with no data: [DONE]
+```
+
+A watchdog cuts a stream that sends no event within `PROVIDER_FIRST_TOKEN_TIMEOUT` or goes silent for longer than `STREAM_STALL_TIMEOUT`. Reasoning models keep it alive while they think. A client that disconnects cancels the upstream request.
+
+**Non-streamed requests** are served from an upstream stream too, joined into one `chat.completion` response. The status is sent only at the end, so every error gets a real status, and a long answer has no total time limit.
+
+Every response carries `X-Request-Id` and `X-LLM-Gateway-Provider`, and the gateway logs one line per request with the provider, the status, the time to first token, the usage and whether the stream was cut short.
+
+```bash
+curl -N localhost:8080/v1/chat/completions \
+  -d '{"model":"chat","stream":true,"messages":[{"role":"user","content":"hi"}]}'
+```
+
+Upstream errors map to a fixed public message; the upstream's own text goes only to the log:
+
+| Upstream | Client gets |
+|---|---|
+| 429 rate limited | `429`, with the upstream `Retry-After` |
+| 401 or 403 | `502` (the gateway's credential, not the client's) |
+| other 4xx | `400` "The upstream provider rejected the request." |
+| 5xx, malformed body, connection error | `502` |
+| first-byte, first-token or stall timeout | `504` |
 
 ## Routes
 

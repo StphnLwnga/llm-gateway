@@ -30,7 +30,7 @@ func startGateway(t *testing.T, slowFor time.Duration, release <-chan struct{}, 
 		t.Fatalf("listen: %v", err)
 	}
 	log := slog.New(slog.DiscardHandler)
-	api := httpapi.New(log, nil)
+	api := httpapi.New(log, httpapi.Deps{})
 	g := &gateway{url: "http://" + ln.Addr().String(), done: make(chan error, 1), started: make(chan struct{}, 4)}
 
 	mux := http.NewServeMux()
