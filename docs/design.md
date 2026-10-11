@@ -20,7 +20,8 @@ Decisions are recorded in [docs/adr/](adr/README.md).
 | Every error in the OpenAI error envelope ([0002](adr/0002-openai-compatible-api-and-error-envelope.md)) | Built (M0) |
 | `POST /v1/chat/completions`, streamed (SSE) and not streamed | Planned (M1) |
 | The provider contract: one streaming interface, typed upstream errors, an HTTP client with a first-byte timeout, and a contract suite every adapter runs ([0012](adr/0012-streaming-interface-callback.md)) | Built (M1) |
-| Providers: Ollama, Groq, OpenAI ([0005](adr/0005-providers.md)) | Planned (M1) |
+| Providers: Groq and OpenAI through one OpenAI-compatible adapter, with platform keys ([0005](adr/0005-providers.md), [0013](adr/0013-provider-credentials.md)) | Built (M1) |
+| Provider: Ollama | Planned (M1) |
 | A fake OpenAI-compatible upstream (`fakeprovider`) with deterministic output and fault modes chosen per request in the model name, for tests and load tests | Built (M1) |
 | Provider: Anthropic, and `response_format` across providers with output schema validation | Planned (M5) |
 | Tenants, hashed API keys, encrypted per-tenant provider credentials | Planned (M3) |
@@ -83,7 +84,7 @@ What the estimates show:
 
 Two long-running processes, one admin binary, and a test server:
 
-- `cmd/gateway`: the request path. **Built (M0)**: health, readiness, the models stub, graceful shutdown, the Postgres pool. The rest is planned.
+- `cmd/gateway`: the request path. **Built (M0)**: health, readiness, the models stub, graceful shutdown, the Postgres pool. **Built (M1)**: the provider registry, with one adapter per provider that has a platform key. The rest is planned.
 - `cmd/worker`: everything off the request path. **Planned (M6)**.
 - `cmd/gatewayctl`: one-shot admin commands. **Built (M0)**: `migrate`.
 - `cmd/fakeprovider`: a fake OpenAI-compatible upstream with per-request fault modes (slow headers, slow first token, slow tokens, stall, drop, malformed chunk, error status), for tests and load tests. **Built (M1)**. It has its own image target, so the production image does not contain it, and Compose starts it only under the `loadtest` profile.
@@ -202,7 +203,7 @@ What happens when each dependency fails, and what the client sees.
 | Area | Design | Status |
 |---|---|---|
 | API keys | Random keys, stored as a prefix and a hash, with `revoked_at`. The hash function (SHA-256 or argon2 for random keys) and the auth cache TTL against revocation speed are decided in M3. | Planned (M3) |
-| Provider credentials | AES-GCM envelope encryption. The associated data is `tenant_id\|provider\|key_version`, so a ciphertext copied to another tenant's row fails to decrypt. The key-encryption key moves to a cloud KMS. | Planned (M3, M12, M13) |
+| Provider credentials | Platform keys come from the environment as `config.Secret` values; a tenant key, when present, wins ([0013](adr/0013-provider-credentials.md)). Tenant keys use AES-GCM envelope encryption. The associated data is `tenant_id\|provider\|key_version`, so a ciphertext copied to another tenant's row fails to decrypt. The key-encryption key moves to a cloud KMS. | Built (M1) for platform keys. Planned (M3, M12, M13) for tenant keys. |
 | Secrets in config | `config.Secret` prints `[redacted]` through `fmt`, `log/slog` and `encoding/json`. `DATABASE_URL` is never logged, and a pgx parse error, which can quote the URL, is replaced with a fixed message. | Built (M0) |
 | Error bodies | A 5xx returns a fixed message; the full error goes to the log. The client message never comes from `err.Error()`. | Built (M0) |
 | Usage and request logs | `usage.v1` carries no prompt content. `requestlog.v1` is opt-in and redacted before it is produced, with the same PII redaction as the guards. | Planned (M6, M10) |
