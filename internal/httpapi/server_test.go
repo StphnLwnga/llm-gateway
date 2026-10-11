@@ -52,7 +52,7 @@ func decodeError(t *testing.T, rec *httptest.ResponseRecorder) errorBody {
 func TestHealthzIsAlways200(t *testing.T) {
 	t.Parallel()
 	failing := checkFunc(func(context.Context) error { return errors.New("db down") })
-	h := New(discard, failing)
+	h := New(discard, nil, failing)
 	h.StartDraining()
 
 	if rec := do(t, h, http.MethodGet, "/healthz"); rec.Code != http.StatusOK {
@@ -79,7 +79,7 @@ func TestReadyz(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			h := New(discard, tc.checks...)
+			h := New(discard, nil, tc.checks...)
 			if tc.draining {
 				h.StartDraining()
 			}
@@ -97,7 +97,7 @@ func TestReadyz(t *testing.T) {
 func TestReadyzBoundsEachCheck(t *testing.T) {
 	t.Parallel()
 	var deadline time.Time
-	h := New(discard, checkFunc(func(ctx context.Context) error {
+	h := New(discard, nil, checkFunc(func(ctx context.Context) error {
 		deadline, _ = ctx.Deadline()
 		return nil
 	}))
@@ -109,7 +109,7 @@ func TestReadyzBoundsEachCheck(t *testing.T) {
 
 func TestModelsReturnsTheOpenAIListShape(t *testing.T) {
 	t.Parallel()
-	rec := do(t, New(discard), http.MethodGet, "/v1/models")
+	rec := do(t, New(discard, nil), http.MethodGet, "/v1/models")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET /v1/models = %d, want 200", rec.Code)
 	}
@@ -120,7 +120,7 @@ func TestModelsReturnsTheOpenAIListShape(t *testing.T) {
 
 func TestUnknownRouteIs404InTheOpenAIShape(t *testing.T) {
 	t.Parallel()
-	rec := do(t, New(discard), http.MethodGet, "/v1/nope")
+	rec := do(t, New(discard, nil), http.MethodGet, "/v1/nope")
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("GET /v1/nope = %d, want 404", rec.Code)
 	}
@@ -134,7 +134,7 @@ func TestUnknownRouteIs404InTheOpenAIShape(t *testing.T) {
 
 func TestWrongMethodIs405InTheOpenAIShape(t *testing.T) {
 	t.Parallel()
-	rec := do(t, New(discard), http.MethodPost, "/v1/models")
+	rec := do(t, New(discard, nil), http.MethodPost, "/v1/models")
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("POST /v1/models = %d, want 405", rec.Code)
 	}
@@ -222,5 +222,23 @@ func TestServerTimeouts(t *testing.T) {
 	}
 	if srv.WriteTimeout != 0 {
 		t.Errorf("WriteTimeout = %v, want 0: it would cut off every streamed answer", srv.WriteTimeout)
+	}
+}
+
+type fixedModels []Model
+
+func (f fixedModels) Models() []Model { return f }
+
+func TestModelsListsTheRoutedAliasesInTheOpenAIShape(t *testing.T) {
+	t.Parallel()
+	h := New(discard, fixedModels{
+		{ID: "chat", Created: time.Unix(1760000000, 0)},
+		{ID: "fast", Created: time.Unix(1760000100, 0)},
+	})
+	rec := do(t, h, http.MethodGet, "/v1/models")
+	want := `{"object":"list","data":[{"id":"chat","object":"model","created":1760000000,"owned_by":"llm-gateway"},` +
+		`{"id":"fast","object":"model","created":1760000100,"owned_by":"llm-gateway"}]}` + "\n"
+	if rec.Code != http.StatusOK || rec.Body.String() != want {
+		t.Errorf("GET /v1/models = %d %s, want 200 %s", rec.Code, rec.Body.String(), want)
 	}
 }

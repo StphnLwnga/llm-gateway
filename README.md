@@ -30,8 +30,8 @@ Migrations run as a separate one-shot step (`gatewayctl migrate up`), never when
 | Method and path | What it does |
 |---|---|
 | `GET /healthz` | Liveness. `200 {"status":"ok"}` while the process serves HTTP. It never checks a dependency. |
-| `GET /readyz` | Readiness. `200 {"status":"ready"}` when every readiness check passes; `503` while the server drains or when a check fails. |
-| `GET /v1/models` | The OpenAI model list. A stub for now: `{"object":"list","data":[]}`. |
+| `GET /readyz` | Readiness. `200 {"status":"ready"}` when every readiness check passes; `503` while the server drains, when Postgres does not answer, or until the routes table has loaded once. |
+| `GET /v1/models` | The OpenAI model list: every alias in the routes table that has at least one enabled route with an enabled provider. `created` is the earliest route's creation time; `owned_by` is `llm-gateway`. |
 
 Every error uses the OpenAI error shape. An unknown route returns `404`, and a known path with the wrong method returns `405` with an `Allow` header:
 

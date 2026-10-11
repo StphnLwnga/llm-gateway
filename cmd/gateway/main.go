@@ -16,6 +16,7 @@ import (
 	"github.com/StphnLwnga/llm-gateway/internal/config"
 	"github.com/StphnLwnga/llm-gateway/internal/httpapi"
 	"github.com/StphnLwnga/llm-gateway/internal/provider"
+	"github.com/StphnLwnga/llm-gateway/internal/router"
 	"github.com/StphnLwnga/llm-gateway/internal/store/postgres"
 	"github.com/StphnLwnga/llm-gateway/internal/telemetry"
 )
@@ -48,6 +49,7 @@ func run(ctx context.Context, getenv func(string) (string, bool), stdout io.Writ
 		"db_max_conns", cfg.DBMaxConns,
 		"provider_connect_timeout", cfg.ProviderConnectTimeout.String(),
 		"provider_first_byte_timeout", cfg.ProviderFirstByteTimeout.String(),
+		"routes_refresh_interval", cfg.RoutesRefreshInterval.String(),
 	)
 
 	client := provider.NewHTTPClient(cfg.ProviderConnectTimeout, cfg.ProviderFirstByteTimeout)
@@ -60,7 +62,15 @@ func run(ctx context.Context, getenv func(string) (string, bool), stdout io.Writ
 	}
 	defer pool.Close()
 
-	api := httpapi.New(log, postgres.Pinger{Pool: pool})
+	routes := router.New(postgres.Routes{Pool: pool}, registry, cfg.RoutesRefreshInterval, log)
+	refreshed := make(chan struct{})
+	go func() {
+		defer close(refreshed)
+		routes.Run(ctx)
+	}()
+	defer func() { <-refreshed }() // runs before pool.Close, so no refresh is left using the pool
+
+	api := httpapi.New(log, routedModels{routes}, postgres.Pinger{Pool: pool}, routes)
 	srv := httpapi.NewServer(cfg.Addr(), api)
 	srv.ErrorLog = slog.NewLogLogger(log.Handler(), slog.LevelWarn)
 

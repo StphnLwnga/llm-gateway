@@ -6,9 +6,11 @@ import (
 	"net/http"
 
 	"github.com/StphnLwnga/llm-gateway/internal/config"
+	"github.com/StphnLwnga/llm-gateway/internal/httpapi"
 	"github.com/StphnLwnga/llm-gateway/internal/provider"
 	"github.com/StphnLwnga/llm-gateway/internal/provider/ollama"
 	"github.com/StphnLwnga/llm-gateway/internal/provider/openaicompat"
+	"github.com/StphnLwnga/llm-gateway/internal/router"
 )
 
 // providers returns every configured provider, by name: the ones with a platform key, and Ollama when its URL is set.
@@ -33,6 +35,19 @@ func providers(ctx context.Context, cfg config.Config, client *http.Client, log 
 	} else {
 		out["ollama"] = ollama.New("ollama", cfg.OllamaBaseURL, client)
 		log.InfoContext(ctx, "provider enabled", "provider", "ollama", "base_url", cfg.OllamaBaseURL)
+	}
+	return out
+}
+
+// routedModels lists the router's aliases in the HTTP API's model shape.
+type routedModels struct {
+	routes *router.Router
+}
+
+func (m routedModels) Models() []httpapi.Model {
+	var out []httpapi.Model
+	for _, rm := range m.routes.Models() {
+		out = append(out, httpapi.Model{ID: rm.Alias, Created: rm.Created})
 	}
 	return out
 }

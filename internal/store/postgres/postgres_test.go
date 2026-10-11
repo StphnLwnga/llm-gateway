@@ -183,7 +183,7 @@ func TestMigrateRejectsAnUnknownCommand(t *testing.T) {
 func TestReadyzFollowsPostgres(t *testing.T) {
 	t.Parallel()
 	ctr, dsn := startPostgres(t)
-	api := httpapi.New(discard, postgres.Pinger{Pool: openPool(t, dsn)})
+	api := httpapi.New(discard, nil, postgres.Pinger{Pool: openPool(t, dsn)})
 
 	readyz := func() int {
 		rec := httptest.NewRecorder()
