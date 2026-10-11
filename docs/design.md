@@ -21,6 +21,7 @@ Decisions are recorded in [docs/adr/](adr/README.md).
 | `POST /v1/chat/completions`, streamed (SSE) and not streamed | Planned (M1) |
 | The provider contract: one streaming interface, typed upstream errors, an HTTP client with a first-byte timeout, and a contract suite every adapter runs ([0012](adr/0012-streaming-interface-callback.md)) | Built (M1) |
 | Providers: Ollama, Groq, OpenAI ([0005](adr/0005-providers.md)) | Planned (M1) |
+| A fake OpenAI-compatible upstream (`fakeprovider`) with deterministic output and fault modes chosen per request in the model name, for tests and load tests | Built (M1) |
 | Provider: Anthropic, and `response_format` across providers with output schema validation | Planned (M5) |
 | Tenants, hashed API keys, encrypted per-tenant provider credentials | Planned (M3) |
 | Routing: model aliases to an ordered provider list, failover before the first content delta, a breaker per endpoint, jittered retries that honour `Retry-After` | Planned (M4) |
@@ -80,11 +81,12 @@ What the estimates show:
 
 ## 3. Architecture
 
-Two long-running processes and one admin binary:
+Two long-running processes, one admin binary, and a test server:
 
 - `cmd/gateway`: the request path. **Built (M0)**: health, readiness, the models stub, graceful shutdown, the Postgres pool. The rest is planned.
 - `cmd/worker`: everything off the request path. **Planned (M6)**.
 - `cmd/gatewayctl`: one-shot admin commands. **Built (M0)**: `migrate`.
+- `cmd/fakeprovider`: a fake OpenAI-compatible upstream with per-request fault modes (slow headers, slow first token, slow tokens, stall, drop, malformed chunk, error status), for tests and load tests. **Built (M1)**. Compose starts it only under the `loadtest` profile.
 
 ```mermaid
 flowchart LR
