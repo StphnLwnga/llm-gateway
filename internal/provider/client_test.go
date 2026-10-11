@@ -29,7 +29,7 @@ func TestHTTPClientLetsAStreamOutliveTheFirstByteTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Do: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatalf("reading a 400ms stream with a 50ms first-byte timeout: %v", err)
@@ -57,7 +57,7 @@ func TestHTTPClientTimesOutWaitingForHeaders(t *testing.T) {
 	start := time.Now()
 	resp, err := client.Do(req)
 	if err == nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		t.Fatal("Do succeeded, want a first-byte timeout")
 	}
 	var pe *Error
