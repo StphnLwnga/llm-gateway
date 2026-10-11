@@ -58,6 +58,11 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	if cfg.GroqAPIKey != "" || cfg.OpenAIAPIKey != "" {
 		t.Errorf("provider keys are set by default")
 	}
+	if cfg.ProviderFirstTokenTimeout != 60*time.Second || cfg.StreamStallTimeout != 30*time.Second ||
+		cfg.StatusHold != 3*time.Second || cfg.HeartbeatInterval != 10*time.Second || cfg.RequestMaxBytes != 4<<20 {
+		t.Errorf("streaming defaults = %v, %v, %v, %v, %d", cfg.ProviderFirstTokenTimeout, cfg.StreamStallTimeout,
+			cfg.StatusHold, cfg.HeartbeatInterval, cfg.RequestMaxBytes)
+	}
 	if cfg.RoutesRefreshInterval != 10*time.Second {
 		t.Errorf("RoutesRefreshInterval = %v, want 10s", cfg.RoutesRefreshInterval)
 	}
@@ -217,6 +222,12 @@ func TestLoadRejectsInvalidSettings(t *testing.T) {
 		{"first byte timeout set but empty", map[string]string{"PROVIDER_FIRST_BYTE_TIMEOUT": ""}, "PROVIDER_FIRST_BYTE_TIMEOUT"},
 		{"groq base url without a scheme", map[string]string{"GROQ_BASE_URL": "api.groq.com/openai/v1"}, "GROQ_BASE_URL"},
 		{"openai base url with another scheme", map[string]string{"OPENAI_BASE_URL": "ftp://api.openai.com/v1"}, "OPENAI_BASE_URL"},
+		{"first token timeout zero", map[string]string{"PROVIDER_FIRST_TOKEN_TIMEOUT": "0s"}, "PROVIDER_FIRST_TOKEN_TIMEOUT"},
+		{"stall timeout zero", map[string]string{"STREAM_STALL_TIMEOUT": "0s"}, "STREAM_STALL_TIMEOUT"},
+		{"status hold negative", map[string]string{"STATUS_HOLD": "-1s"}, "STATUS_HOLD"},
+		{"heartbeat zero", map[string]string{"HEARTBEAT_INTERVAL": "0s"}, "HEARTBEAT_INTERVAL"},
+		{"request max bytes too small", map[string]string{"REQUEST_MAX_BYTES": "100"}, "REQUEST_MAX_BYTES"},
+		{"request max bytes not a number", map[string]string{"REQUEST_MAX_BYTES": "4MiB"}, "REQUEST_MAX_BYTES"},
 		{"routes refresh interval zero", map[string]string{"ROUTES_REFRESH_INTERVAL": "0s"}, "ROUTES_REFRESH_INTERVAL"},
 		{"routes refresh interval not a duration", map[string]string{"ROUTES_REFRESH_INTERVAL": "often"}, "ROUTES_REFRESH_INTERVAL"},
 		{"ollama base url set but empty", map[string]string{"OLLAMA_BASE_URL": ""}, "OLLAMA_BASE_URL"},

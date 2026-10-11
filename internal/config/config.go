@@ -61,8 +61,20 @@ type Config struct {
 
 	// ProviderConnectTimeout bounds the TCP connect to a provider.
 	ProviderConnectTimeout time.Duration
-	// ProviderFirstByteTimeout bounds the wait for a provider's response headers.
+	// ProviderFirstByteTimeout bounds the wait for a provider's response
+	// headers; some providers send them before the first token.
 	ProviderFirstByteTimeout time.Duration
+	// ProviderFirstTokenTimeout bounds the wait for the first stream event.
+	ProviderFirstTokenTimeout time.Duration
+	// StreamStallTimeout bounds the gap between two stream events.
+	StreamStallTimeout time.Duration
+	// StatusHold is how long a streamed request waits for the first token
+	// before it commits 200 and starts heartbeats.
+	StatusHold time.Duration
+	// HeartbeatInterval is the gap between SSE comment heartbeats.
+	HeartbeatInterval time.Duration
+	// RequestMaxBytes bounds a request body.
+	RequestMaxBytes int64
 
 	// Platform provider keys. An empty key disables that provider.
 	GroqAPIKey    Secret
@@ -84,6 +96,12 @@ func (c Config) Addr() string {
 
 // maxDBConns keeps DB_MAX_CONNS far below Postgres' connection limit and inside int32.
 const maxDBConns = 1000
+
+// A body smaller than 1 KiB cannot hold a useful chat request; 64 MiB bounds memory per request.
+const (
+	minRequestBytes = 1 << 10
+	maxRequestBytes = 64 << 20
+)
 
 var logLevels = map[string]slog.Level{
 	"debug": slog.LevelDebug,
@@ -146,6 +164,17 @@ func Load(lookup func(key string) (string, bool)) (Config, error) {
 	cfg.ProviderConnectTimeout = positive("PROVIDER_CONNECT_TIMEOUT", "5s")
 	cfg.ProviderFirstByteTimeout = positive("PROVIDER_FIRST_BYTE_TIMEOUT", "60s")
 	cfg.RoutesRefreshInterval = positive("ROUTES_REFRESH_INTERVAL", "10s")
+	cfg.ProviderFirstTokenTimeout = positive("PROVIDER_FIRST_TOKEN_TIMEOUT", "60s")
+	cfg.StreamStallTimeout = positive("STREAM_STALL_TIMEOUT", "30s")
+	cfg.StatusHold = duration("STATUS_HOLD", "3s")
+	cfg.HeartbeatInterval = positive("HEARTBEAT_INTERVAL", "10s")
+
+	rawMaxBytes := get("REQUEST_MAX_BYTES", "4194304")
+	maxBytes, err := strconv.ParseInt(rawMaxBytes, 10, 64)
+	if err != nil || maxBytes < minRequestBytes || maxBytes > maxRequestBytes {
+		errs = append(errs, fmt.Errorf("REQUEST_MAX_BYTES %q: must be a whole number of bytes from %d to %d", rawMaxBytes, minRequestBytes, maxRequestBytes))
+	}
+	cfg.RequestMaxBytes = maxBytes
 
 	baseURL := func(key, def string) string {
 		raw := get(key, def)

@@ -55,7 +55,12 @@ Settings come from environment variables. Both binaries, `gateway` and `gatewayc
 | `DRAIN_DELAY` | `0s` | A Go duration of 0 or more, for example `5s`. After SIGTERM, how long `/readyz` returns 503 while the server still serves, so the load balancer stops sending traffic. |
 | `SHUTDOWN_TIMEOUT` | `20s` | A Go duration of 0 or more. How long in-flight requests get to finish after the drain. Keep `DRAIN_DELAY` plus `SHUTDOWN_TIMEOUT` below the Kubernetes grace period (30s by default). |
 | `PROVIDER_CONNECT_TIMEOUT` | `5s` | A Go duration above 0. How long to wait for a TCP connection to a provider. |
-| `PROVIDER_FIRST_BYTE_TIMEOUT` | `60s` | A Go duration above 0. How long to wait for a provider's response headers. There is no limit on the whole response, because a streamed answer can run for minutes. The default leaves room for a local model that has to load before it answers. |
+| `PROVIDER_FIRST_BYTE_TIMEOUT` | `60s` | A Go duration above 0. How long to wait for a provider's response headers. Some providers send headers before the first token, so this is not a time-to-first-token limit; `PROVIDER_FIRST_TOKEN_TIMEOUT` is. There is no limit on the whole response. The default leaves room for a local model that has to load before it answers. |
+| `PROVIDER_FIRST_TOKEN_TIMEOUT` | `60s` | A Go duration above 0. How long a stream may wait for its first event, reasoning progress included. When it passes, the request fails with a timeout. |
+| `STREAM_STALL_TIMEOUT` | `30s` | A Go duration above 0. The longest gap allowed between two stream events. |
+| `STATUS_HOLD` | `3s` | A Go duration of 0 or more. How long a streamed request waits for the first token before it sends `200` and starts heartbeats. An error in that time gets a real HTTP status. |
+| `HEARTBEAT_INTERVAL` | `10s` | A Go duration above 0. The gap between SSE comment heartbeats (`: heartbeat`) while a committed stream waits for its first token. |
+| `REQUEST_MAX_BYTES` | `4194304` | A whole number of bytes from 1024 to 67108864: the largest request body the gateway reads. |
 | `GROQ_API_KEY` | none | The platform key for Groq. When it is not set, Groq is disabled and the gateway logs that at startup. Never printed or logged. |
 | `GROQ_BASE_URL` | `https://api.groq.com/openai/v1` | An http or https URL: Groq's OpenAI-compatible API, or the fake provider in tests |
 | `OPENAI_API_KEY` | none | The platform key for OpenAI. When it is not set, OpenAI is disabled and the gateway logs that at startup. Never printed or logged. |
