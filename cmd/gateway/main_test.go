@@ -91,7 +91,7 @@ func TestRunEnablesProvidersWithKeysAndNeverLogsTheKeys(t *testing.T) {
 	const groqKey = "gsk_live_do_not_log_0123456789"
 	vars := map[string]string{
 		"PORT": freePort(t), "DATABASE_URL": "postgres://gw:pw@127.0.0.1:1/gateway",
-		"GROQ_API_KEY": groqKey,
+		"GROQ_API_KEY": groqKey, "OLLAMA_BASE_URL": "http://localhost:11434",
 	}
 	if err := run(ctx, env(vars), &stdout); err != nil {
 		t.Fatalf("run: %v", err)
@@ -103,7 +103,8 @@ func TestRunEnablesProvidersWithKeysAndNeverLogsTheKeys(t *testing.T) {
 	for _, want := range []string{
 		`"msg":"provider enabled","provider":"groq"`,
 		`"msg":"provider disabled","provider":"openai","reason":"OPENAI_API_KEY is not set"`,
-		`"msg":"providers ready","names":["groq"]`,
+		`"msg":"provider enabled","provider":"ollama","base_url":"http://localhost:11434"`,
+		`"msg":"providers ready","names":["groq","ollama"]`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("logs miss %s:\n%s", want, out)
