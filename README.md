@@ -23,6 +23,8 @@ make down                            # stop the stack; the Postgres volume is ke
 
 `make test` runs every test. The Postgres integration tests start a throwaway container with testcontainers, so they need Docker. Without Docker they skip locally, and fail when `CI` is set.
 
+Provider keys go in a `.env` file at the repo root (for example `GROQ_API_KEY=...`). Compose passes it to the gateway if it exists; the file is gitignored and never copied into the image. Compose points `OLLAMA_BASE_URL` at Ollama on the host (`http://host.docker.internal:11434`).
+
 Migrations run as a separate one-shot step (`gatewayctl migrate up`), never when the gateway starts. The gateway starts even when Postgres is down; `/readyz` returns 503 until Postgres answers.
 
 ## Endpoints

@@ -44,6 +44,10 @@ services:
 
   gateway:
     <<: *gateway-image
+    env_file:
+      # Provider keys stay out of this file and out of the image (.dockerignore).
+      - path: ../.env
+        required: false
     environment:
       <<: *database-url
       LOG_FORMAT: text
@@ -51,6 +55,10 @@ services:
       DB_MAX_CONNS: ${DB_MAX_CONNS:-10}
       DRAIN_DELAY: ${DRAIN_DELAY:-0s}
       SHUTDOWN_TIMEOUT: ${SHUTDOWN_TIMEOUT:-20s}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+    extra_hosts:
+      # Linux has no host.docker.internal by default; Docker Desktop does.
+      - "host.docker.internal:host-gateway"
     ports:
       - "8080:8080"
     depends_on:
