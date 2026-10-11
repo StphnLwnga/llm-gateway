@@ -59,9 +59,12 @@ services:
     mem_limit: 128m
 
   fakeprovider:
-    <<: *gateway-image
+    image: llm-gateway-fakeprovider:local
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile
+      target: fakeprovider
     profiles: ["loadtest"]
-    entrypoint: ["/usr/local/bin/fakeprovider"]
     environment:
       PORT: "8081"
     ports:

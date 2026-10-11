@@ -86,7 +86,7 @@ Two long-running processes, one admin binary, and a test server:
 - `cmd/gateway`: the request path. **Built (M0)**: health, readiness, the models stub, graceful shutdown, the Postgres pool. The rest is planned.
 - `cmd/worker`: everything off the request path. **Planned (M6)**.
 - `cmd/gatewayctl`: one-shot admin commands. **Built (M0)**: `migrate`.
-- `cmd/fakeprovider`: a fake OpenAI-compatible upstream with per-request fault modes (slow headers, slow first token, slow tokens, stall, drop, malformed chunk, error status), for tests and load tests. **Built (M1)**. Compose starts it only under the `loadtest` profile.
+- `cmd/fakeprovider`: a fake OpenAI-compatible upstream with per-request fault modes (slow headers, slow first token, slow tokens, stall, drop, malformed chunk, error status), for tests and load tests. **Built (M1)**. It has its own image target, so the production image does not contain it, and Compose starts it only under the `loadtest` profile.
 
 ```mermaid
 flowchart LR

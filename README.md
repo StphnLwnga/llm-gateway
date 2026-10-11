@@ -63,7 +63,7 @@ On SIGINT or SIGTERM the gateway marks itself as draining (`/readyz` returns 503
 
 ## Fake provider
 
-`fakeprovider` serves a fake OpenAI chat completions API for local and load tests. Tests run the same handler in-process (`internal/fakeupstream`). The output is deterministic: the answer is a fixed word sequence, and the usage counts match the tokens sent.
+`fakeprovider` serves a fake OpenAI chat completions API for local and load tests. Tests run the same handler in-process (`internal/fakeupstream`). It has its own image, the Dockerfile's `fakeprovider` target, so the production image does not contain it. The output is deterministic: the answer is a fixed word sequence, and the usage counts match the tokens sent.
 
 ```bash
 docker compose -f deploy/compose.yaml --profile loadtest up -d fakeprovider   # a plain `up` does not start it
@@ -110,7 +110,7 @@ Every pull request and every push to `main` runs four jobs in GitHub Actions (`.
 | lint | `gofmt -l`, `go mod tidy -diff`, `go vet`, golangci-lint v2 (the standard set plus gosec, errorlint, bodyclose, noctx, revive, misspell) | a file is not formatted, `go.mod` is not tidy, or any check reports a finding |
 | test | `go test -race ./...`, including the Postgres integration tests on the runner's Docker | a test fails or the race detector finds a race |
 | vuln | `govulncheck ./...` | the code reaches a known vulnerability |
-| image | `docker build` of `deploy/docker/Dockerfile`, no push | the image does not build |
+| image | `docker build` of `deploy/docker/Dockerfile`: the production image and the `fakeprovider` target, no push | an image does not build |
 
 `readme_test.go` fails when a setting, a route, a Go package folder or a fake provider directive is missing from this README. Actions are pinned by commit SHA, and Dependabot proposes updates to actions and Go modules weekly. A new push to the same branch cancels the run in progress.
 
@@ -133,7 +133,7 @@ Every pull request and every push to `main` runs four jobs in GitHub Actions (`.
 │   └── telemetry/           the structured logger
 ├── deploy/
 │   ├── docker/
-│   │   └── Dockerfile       two-stage build into a distroless, non-root image
+│   │   └── Dockerfile       distroless, non-root images: the gateway (default target) and the fake provider
 │   └── compose.yaml         the local stack: Postgres (pgvector), migrate, gateway
 ├── docs/
 │   ├── design.md            the system design
