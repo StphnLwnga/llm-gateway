@@ -81,3 +81,32 @@ func TestRunLogsTheLoadedConfigAndStopsOnCancel(t *testing.T) {
 		}
 	}
 }
+
+func TestRunEnablesProvidersWithKeysAndNeverLogsTheKeys(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	var stdout bytes.Buffer
+	const groqKey = "gsk_live_do_not_log_0123456789"
+	vars := map[string]string{
+		"PORT": freePort(t), "DATABASE_URL": "postgres://gw:pw@127.0.0.1:1/gateway",
+		"GROQ_API_KEY": groqKey,
+	}
+	if err := run(ctx, env(vars), &stdout); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	out := stdout.String()
+	if strings.Contains(out, groqKey) {
+		t.Fatalf("the logs contain the Groq key:\n%s", out)
+	}
+	for _, want := range []string{
+		`"msg":"provider enabled","provider":"groq"`,
+		`"msg":"provider disabled","provider":"openai","reason":"OPENAI_API_KEY is not set"`,
+		`"msg":"providers ready","names":["groq"]`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("logs miss %s:\n%s", want, out)
+		}
+	}
+}

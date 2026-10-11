@@ -6,13 +6,16 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net"
 	"os"
 	"os/signal"
+	"slices"
 	"syscall"
 
 	"github.com/StphnLwnga/llm-gateway/internal/config"
 	"github.com/StphnLwnga/llm-gateway/internal/httpapi"
+	"github.com/StphnLwnga/llm-gateway/internal/provider"
 	"github.com/StphnLwnga/llm-gateway/internal/store/postgres"
 	"github.com/StphnLwnga/llm-gateway/internal/telemetry"
 )
@@ -43,7 +46,13 @@ func run(ctx context.Context, getenv func(string) (string, bool), stdout io.Writ
 		"drain_delay", cfg.DrainDelay.String(),
 		"shutdown_timeout", cfg.ShutdownTimeout.String(),
 		"db_max_conns", cfg.DBMaxConns,
+		"provider_connect_timeout", cfg.ProviderConnectTimeout.String(),
+		"provider_first_byte_timeout", cfg.ProviderFirstByteTimeout.String(),
 	)
+
+	client := provider.NewHTTPClient(cfg.ProviderConnectTimeout, cfg.ProviderFirstByteTimeout)
+	registry := providers(ctx, cfg, client, log)
+	log.InfoContext(ctx, "providers ready", "names", slices.Sorted(maps.Keys(registry)))
 
 	pool, err := postgres.Open(ctx, cfg.DatabaseURL, cfg.DBMaxConns)
 	if err != nil {
