@@ -4,7 +4,7 @@ llm-gateway is a multi-tenant, OpenAI-compatible LLM gateway. Each tenant calls 
 
 This document is the target design. Each part is marked:
 
-- **Built (M0)**: in the code now.
+- **Built (Mn)**: in the code now, added in milestone n.
 - **Planned (Mn)**: designed here, built in milestone n.
 
 Decisions are recorded in [docs/adr/](adr/README.md).
@@ -19,6 +19,7 @@ Decisions are recorded in [docs/adr/](adr/README.md).
 | `GET /v1/models` in the OpenAI list shape | Built (M0) as a stub. Planned (M1): lists the configured model aliases. |
 | Every error in the OpenAI error envelope ([0002](adr/0002-openai-compatible-api-and-error-envelope.md)) | Built (M0) |
 | `POST /v1/chat/completions`, streamed (SSE) and not streamed | Planned (M1) |
+| The provider contract: one streaming interface, typed upstream errors, an HTTP client with a first-byte timeout, and a contract suite every adapter runs ([0012](adr/0012-streaming-interface-callback.md)) | Built (M1) |
 | Providers: Ollama, Groq, OpenAI ([0005](adr/0005-providers.md)) | Planned (M1) |
 | Provider: Anthropic, and `response_format` across providers with output schema validation | Planned (M5) |
 | Tenants, hashed API keys, encrypted per-tenant provider credentials | Planned (M3) |
@@ -237,8 +238,8 @@ postgres (healthy) ─> migrate (exit 0) ─> gateway
 
 | Milestone | Scope | Status |
 |---|---|---|
-| 0 | Walking skeleton: config, logging, health and readiness, graceful shutdown, Postgres pool and migrations, image, Compose, CI, this design | In progress |
-| 1 | Streaming core: provider interface, Ollama and OpenAI-compatible adapters, fake provider, status held until the first token, stall timeout | Planned |
+| 0 | Walking skeleton: config, logging, health and readiness, graceful shutdown, Postgres pool and migrations, image, Compose, CI, this design | Built |
+| 1 | Streaming core: provider interface, Ollama and OpenAI-compatible adapters, fake provider, status held until the first token, stall timeout | In progress |
 | 2 | Observability | Planned |
 | 3 | Tenancy: tenants, hashed keys, key vault, credentials, database roles | Planned |
 | 4 | Router resilience: aliases, failover, breaker, retries | Planned |
