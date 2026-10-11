@@ -56,6 +56,19 @@ Settings come from environment variables. Both binaries, `gateway` and `gatewayc
 
 On SIGINT or SIGTERM the gateway marks itself as draining (`/readyz` returns 503), waits `DRAIN_DELAY`, stops accepting connections, and gives in-flight requests up to `SHUTDOWN_TIMEOUT` to finish. A signal never cancels a request that is already running; only the timeout does.
 
+## CI
+
+Every pull request and every push to `main` runs four jobs in GitHub Actions (`.github/workflows/ci.yml`):
+
+| Job | What it runs | Fails when |
+|---|---|---|
+| lint | `gofmt -l`, `go mod tidy -diff`, `go vet`, golangci-lint v2 (the standard set plus gosec, errorlint, bodyclose, noctx, revive, misspell) | a file is not formatted, `go.mod` is not tidy, or any check reports a finding |
+| test | `go test -race ./...`, including the Postgres integration tests on the runner's Docker | a test fails or the race detector finds a race |
+| vuln | `govulncheck ./...` | the code reaches a known vulnerability |
+| image | `docker build` of `deploy/docker/Dockerfile`, no push | the image does not build |
+
+`readme_test.go` fails when a setting, a route or a Go package folder is missing from this README. Actions are pinned by commit SHA, and Dependabot proposes updates to actions and Go modules weekly. A new push to the same branch cancels the run in progress.
+
 ## Project layout
 
 ```text
@@ -67,4 +80,7 @@ internal/store/postgres/     the connection pool, the readiness check, embedded 
 internal/telemetry/          the structured logger
 deploy/docker/Dockerfile     two-stage build into a distroless, non-root image
 deploy/compose.yaml          the local stack: Postgres (pgvector), migrate, gateway
+readme_test.go               fails when this README misses a setting, route or package
+.github/                     CI workflow, Dependabot, pull request template
+.golangci.yml                lint settings
 ```
