@@ -21,7 +21,7 @@ The gateway routes each request to an upstream provider through an adapter behin
 |---|---|---|
 | Ollama, Groq, OpenAI, Anthropic | One local and three hosted providers. Two wire protocols: the OpenAI-compatible API (Ollama, Groq, OpenAI) and the Anthropic Messages API. Ollama runs models locally with no per-token cost. Groq has a free plan with rate limits. | Two adapters to build and test, with different streaming events and usage reporting. |
 | OpenAI-compatible only | One adapter covers all three. Fastest to build. | The `Provider` interface is never tested against a second protocol, so its assumptions stay hidden. |
-| Hosted aggregator | Many models with one integration. | Routing, failover and pricing move upstream, which is the gateway's own job. One external dependency for every request. |
+| Hosted aggregator | Many models with one integration. | Routing, failover and pricing move upstream, which is the work the gateway itself exists to do. One external dependency for every request. |
 
 ## Decision outcome
 
@@ -46,4 +46,4 @@ The adapter seam is proven when one interface serves both protocols with the sam
 - Groq OpenAI compatibility: https://console.groq.com/docs/openai
 - Groq rate limits and plans: https://console.groq.com/docs/rate-limits
 - Anthropic Messages API: https://platform.claude.com/docs/en/api/messages
-- OpenAI chat completions streaming: https://platform.openai.com/docs/api-reference/chat/create
+- OpenAI chat completions streaming: https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create

@@ -43,7 +43,7 @@ Chosen: option 1. Every error response is `{"error":{"message","type","param","c
 
 ## Links
 
-- OpenAI error codes: https://platform.openai.com/docs/guides/error-codes
+- OpenAI error codes: https://developers.openai.com/api/docs/guides/error-codes
 - OpenAI community forum, the "Invalid URL" 404 body: https://community.openai.com/t/invalid-request-error-in-chatgpt-api/81213
-- RFC 9457, Problem Details for HTTP APIs: https://www.rfc-editor.org/rfc/rfc9457
+- RFC 9457, Problem Details for HTTP APIs: https://www.rfc-editor.org/info/rfc9457/
 - Code: `internal/httpapi/errors.go`, `internal/httpapi/server.go`

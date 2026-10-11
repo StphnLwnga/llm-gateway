@@ -66,12 +66,12 @@ Chosen: franz-go.
 
 ## Links
 
-- Apache Kafka introduction (retention, partitions, ordering by key): https://kafka.apache.org/intro
+- Apache Kafka introduction (retention, partitions, ordering by key): https://kafka.apache.org/intro/
 - Amazon MSK: https://docs.aws.amazon.com/msk/latest/developerguide/what-is-msk.html
 - Google Cloud Managed Service for Apache Kafka: https://docs.cloud.google.com/managed-service-for-apache-kafka/docs/overview
 - Its GA release note (2024-11-12): https://docs.cloud.google.com/managed-service-for-apache-kafka/docs/release-notes
 - Strimzi changelog (0.46.0 removes ZooKeeper support): https://github.com/strimzi/strimzi-kafka-operator/blob/main/CHANGELOG.md
-- NATS JetStream: https://docs.nats.io/nats-concepts/jetstream
+- NATS JetStream: https://docs.nats.io/concepts/jetstream
 - Synadia Cloud: https://www.synadia.com/cloud
 - franz-go: https://github.com/twmb/franz-go
 - confluent-kafka-go: https://github.com/confluentinc/confluent-kafka-go
