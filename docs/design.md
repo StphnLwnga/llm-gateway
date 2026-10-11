@@ -16,7 +16,7 @@ Decisions are recorded in [docs/adr/](adr/README.md).
 | Requirement | Status |
 |---|---|
 | `GET /healthz` (liveness) and `GET /readyz` (readiness) | Built (M0) |
-| `GET /v1/models` in the OpenAI list shape | Built (M0) as a stub. Planned (M1): lists the configured model aliases. |
+| `GET /v1/models` in the OpenAI list shape: the aliases with at least one usable route | Built (M1) |
 | Every error in the OpenAI error envelope ([0002](adr/0002-openai-compatible-api-and-error-envelope.md)) | Built (M0) |
 | `POST /v1/chat/completions`, streamed (SSE) and not streamed | Planned (M1) |
 | The provider contract: one streaming interface, typed upstream errors, an HTTP client with a first-byte timeout, and a contract suite every adapter runs ([0012](adr/0012-streaming-interface-callback.md)) | Built (M1) |
@@ -26,13 +26,15 @@ Decisions are recorded in [docs/adr/](adr/README.md).
 | A fake OpenAI-compatible upstream (`fakeprovider`) with deterministic output and fault modes chosen per request in the model name, for tests and load tests | Built (M1) |
 | Provider: Anthropic, and `response_format` across providers with output schema validation | Planned (M5) |
 | Tenants, hashed API keys, encrypted per-tenant provider credentials | Planned (M3) |
-| Routing: model aliases to an ordered provider list, failover before the first content delta, a breaker per endpoint, jittered retries that honour `Retry-After` | Planned (M4) |
+| Routing: model aliases to an ordered provider list, from a routes table served from an in-memory snapshot ([0014](adr/0014-routes-in-postgres.md)) | Built (M1) |
+| Routing resilience: failover before the first content delta, a breaker per endpoint, jittered retries that honour `Retry-After` | Planned (M4) |
 | Rate limits, budget reservation and settlement, the exact cache | Planned (M7) |
 | Usage metering: one usage event per request, a ledger with the price charged | Planned (M6) |
 | Opt-in, redacted request logs, and eval sets built from them | Planned (M6, M9) |
 | Input and output guards: PII redaction, prompt-injection flags (flag only, never block) | Planned (M10) |
 | Semantic cache with a per-tenant filter | Planned (M11) |
 | `gatewayctl`: `migrate up`, `down`, `status` | Built (M0) |
+| `gatewayctl`: `routes add`, `list`, `enable`, `disable` | Built (M1) |
 | `gatewayctl`: tenants, keys, credentials, eval | Planned (M3, M9) |
 
 ### Non-functional
@@ -87,7 +89,7 @@ Two long-running processes, one admin binary, and a test server:
 
 - `cmd/gateway`: the request path. **Built (M0)**: health, readiness, the models stub, graceful shutdown, the Postgres pool. **Built (M1)**: the provider registry, with one adapter per provider that has a platform key, and Ollama when `OLLAMA_BASE_URL` is set. The rest is planned.
 - `cmd/worker`: everything off the request path. **Planned (M6)**.
-- `cmd/gatewayctl`: one-shot admin commands. **Built (M0)**: `migrate`.
+- `cmd/gatewayctl`: one-shot admin commands. **Built (M0)**: `migrate`. **Built (M1)**: `routes`.
 - `cmd/fakeprovider`: a fake OpenAI-compatible upstream with per-request fault modes (slow headers, slow first token, slow tokens, stall, drop, malformed chunk, error status), for tests and load tests. **Built (M1)**. It has its own image target, so the production image does not contain it, and Compose starts it only under the `loadtest` profile.
 
 ```mermaid
@@ -159,14 +161,14 @@ reconciler: Postgres ledger ─> Redis spend
 
 ## 4. Data model
 
-**Built (M0):** migration 00001 enables the `vector` extension. **Planned:** the eight tables below.
+**Built (M0):** migration 00001 enables the `vector` extension. **Built (M1):** migration 00002 adds `routes`. **Planned:** the other tables below.
 
 | Table | Holds | Milestone |
 |---|---|---|
 | `tenants` | One row per tenant | M3 |
 | `api_keys` | Key prefix, key hash, `revoked_at`. The full key is never stored. | M3 |
 | `provider_credentials` | Each tenant's provider keys, AES-GCM envelope encrypted (section 6) | M3 |
-| `routes` | Model alias, provider, upstream model, priority, prices, default and maximum `max_tokens` | M4 |
+| `routes` | Model alias, provider, upstream model, priority, enabled, input and output prices per million tokens (`numeric`, never float), default and maximum `max_tokens` | Built (M1) |
 | `budgets` | Spend limits per tenant and period | M7 |
 | `usage_events` | One row per request, `request_id` primary key, with a snapshot of the price charged | M6 |
 | `request_logs` | Opt-in, redacted prompts and responses | M6 |
