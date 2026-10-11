@@ -16,6 +16,11 @@ linters:
         linters:
           - gosec
         text: G101
+      # Tests run binaries they have just built from this module.
+      - path: _test\.go
+        linters:
+          - gosec
+        text: G204
 
 issues:
   max-issues-per-linter: 0
