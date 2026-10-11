@@ -95,6 +95,21 @@ func TestLoadParsesValidSettings(t *testing.T) {
 	}
 }
 
+func TestLoadBoundsDBMaxConns(t *testing.T) {
+	t.Parallel()
+	cfg, err := Load(env(map[string]string{"DB_MAX_CONNS": "1000"}))
+	if err != nil {
+		t.Fatalf("Load with DB_MAX_CONNS=1000: %v", err)
+	}
+	if cfg.DBMaxConns != 1000 {
+		t.Errorf("DBMaxConns = %d, want 1000", cfg.DBMaxConns)
+	}
+	_, err = Load(env(map[string]string{"DB_MAX_CONNS": "1001"}))
+	if err == nil || !strings.Contains(err.Error(), "from 1 to 1000") {
+		t.Errorf("Load with DB_MAX_CONNS=1001 = %v, want an error naming the range 1 to 1000", err)
+	}
+}
+
 func TestLoadParsesDurations(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -145,6 +160,8 @@ func TestLoadRejectsInvalidSettings(t *testing.T) {
 		{"max conns zero", map[string]string{"DB_MAX_CONNS": "0"}, "DB_MAX_CONNS"},
 		{"max conns negative", map[string]string{"DB_MAX_CONNS": "-3"}, "DB_MAX_CONNS"},
 		{"max conns not a number", map[string]string{"DB_MAX_CONNS": "ten"}, "DB_MAX_CONNS"},
+		{"max conns above the bound", map[string]string{"DB_MAX_CONNS": "1001"}, "DB_MAX_CONNS"},
+		{"max conns that wraps to 1 as int32", map[string]string{"DB_MAX_CONNS": "4294967297"}, "DB_MAX_CONNS"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

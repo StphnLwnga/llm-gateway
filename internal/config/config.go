@@ -64,6 +64,9 @@ func (c Config) Addr() string {
 	return fmt.Sprintf(":%d", c.Port)
 }
 
+// maxDBConns keeps DB_MAX_CONNS far below Postgres' connection limit and inside int32.
+const maxDBConns = 1000
+
 var logLevels = map[string]slog.Level{
 	"debug": slog.LevelDebug,
 	"info":  slog.LevelInfo,
@@ -121,8 +124,8 @@ func Load(lookup func(key string) (string, bool)) (Config, error) {
 
 	rawMaxConns := get("DB_MAX_CONNS", "10")
 	maxConns, err := strconv.Atoi(rawMaxConns)
-	if err != nil || maxConns < 1 {
-		errs = append(errs, fmt.Errorf("DB_MAX_CONNS %q: must be a whole number of 1 or more", rawMaxConns))
+	if err != nil || maxConns < 1 || maxConns > maxDBConns {
+		errs = append(errs, fmt.Errorf("DB_MAX_CONNS %q: must be a whole number from 1 to %d", rawMaxConns, maxDBConns))
 	}
 	cfg.DBMaxConns = maxConns
 

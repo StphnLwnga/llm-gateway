@@ -45,7 +45,7 @@ Settings come from environment variables. Both binaries, `gateway` and `gatewayc
 | Variable | Default | Accepted values |
 |---|---|---|
 | `DATABASE_URL` | none, required | A Postgres connection string, for example `postgres://user:password@host:5432/db`. Never printed or logged. |
-| `DB_MAX_CONNS` | `10` | A whole number of 1 or more: the most connections the pool opens |
+| `DB_MAX_CONNS` | `10` | A whole number from 1 to 1000: the most connections the pool opens |
 | `PORT` | `8080` | A number from 1 to 65535 |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
 | `LOG_FORMAT` | `json` | `json` or `text` |
