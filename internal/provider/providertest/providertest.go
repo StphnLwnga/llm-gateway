@@ -85,7 +85,7 @@ func Run(t *testing.T, a Adapter) {
 		if err != nil {
 			t.Fatalf("Stream: %v", err)
 		}
-		var usages []provider.Usage
+		var usages []counts
 		var finishes []string
 		ended := false
 		for _, e := range events {
@@ -93,7 +93,7 @@ func Run(t *testing.T, a Adapter) {
 				t.Errorf("delta %q arrived after the finish reason or usage", e.Delta)
 			}
 			if e.Usage != nil {
-				usages = append(usages, *e.Usage)
+				usages = append(usages, countsOf(*e.Usage))
 				ended = true
 			}
 			if e.FinishReason != "" {
@@ -101,7 +101,7 @@ func Run(t *testing.T, a Adapter) {
 				ended = true
 			}
 		}
-		if !slices.Equal(usages, []provider.Usage{usage}) {
+		if !slices.Equal(usages, []counts{countsOf(usage)}) {
 			t.Errorf("usage events = %+v, want exactly one %+v", usages, usage)
 		}
 		if !slices.Equal(finishes, []string{"stop"}) {
@@ -120,9 +120,8 @@ func Run(t *testing.T, a Adapter) {
 		if err != nil {
 			t.Fatalf("Chat: %v", err)
 		}
-		want := provider.Response{Content: "Hello world", Usage: usage, FinishReason: "length"}
-		if resp != want {
-			t.Errorf("Chat = %+v, want %+v", resp, want)
+		if resp.Content != "Hello world" || resp.FinishReason != "length" || countsOf(resp.Usage) != countsOf(usage) {
+			t.Errorf("Chat = %q, %q, %+v; want %q, %q, %+v", resp.Content, resp.FinishReason, countsOf(resp.Usage), "Hello world", "length", countsOf(usage))
 		}
 		u.bodiesClosed(t, 1)
 	})
@@ -274,6 +273,16 @@ func Run(t *testing.T, a Adapter) {
 		wantKind(t, err, a.Name, provider.KindUpstreamUnavailable)
 		u.bodiesClosed(t, 1)
 	})
+}
+
+// counts is the part of Usage every adapter must report; timings are optional.
+type counts struct {
+	prompt, completion, total int
+	promptUnknown             bool
+}
+
+func countsOf(u provider.Usage) counts {
+	return counts{u.PromptTokens, u.CompletionTokens, u.TotalTokens, u.PromptTokensUnknown}
 }
 
 var methods = []struct {

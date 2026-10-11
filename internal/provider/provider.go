@@ -1,7 +1,10 @@
 // Package provider defines the contract every upstream model adapter implements.
 package provider
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Message is one chat message.
 type Message struct {
@@ -26,6 +29,22 @@ type Usage struct {
 	PromptTokens     int
 	CompletionTokens int
 	TotalTokens      int
+
+	// PromptTokensUnknown is set when the provider did not report the prompt
+	// tokens. PromptTokens and TotalTokens are then 0 and must not be billed
+	// as real counts.
+	PromptTokensUnknown bool
+
+	Timings *Timings // nil when the provider reports no timings
+}
+
+// Timings is the provider's own account of where the time went. A nil field
+// was not reported, which is different from zero.
+type Timings struct {
+	Queue   *time.Duration
+	Load    *time.Duration
+	Prefill *time.Duration
+	Decode  *time.Duration
 }
 
 // Event is one step of a streamed answer: a text delta, the final usage, the
