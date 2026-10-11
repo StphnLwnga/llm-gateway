@@ -6,7 +6,6 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -14,49 +13,20 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
 	"github.com/StphnLwnga/llm-gateway/internal/config"
 	"github.com/StphnLwnga/llm-gateway/internal/httpapi"
 	"github.com/StphnLwnga/llm-gateway/internal/store/postgres"
+	"github.com/StphnLwnga/llm-gateway/internal/store/postgres/pgtest"
 )
-
-// postgresImage is the same image as deploy/compose.yaml.
-const postgresImage = "pgvector/pgvector:0.8.7-pg18-trixie"
 
 var discard = slog.New(slog.DiscardHandler)
 
-// startPostgres skips without Docker locally, but fails in CI so the tests never silently stop.
+// startPostgres skips without Docker locally, but fails in CI.
 func startPostgres(t *testing.T) (*tcpostgres.PostgresContainer, config.Secret) {
 	t.Helper()
-	ctx := t.Context()
-	provider, err := testcontainers.ProviderDocker.GetProvider()
-	if err == nil {
-		err = provider.Health(ctx)
-	}
-	if err != nil {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("Docker is required in CI for integration tests: %v", err)
-		}
-		t.Skipf("Docker is not available, skipping the Postgres integration test: %v", err)
-	}
-
-	ctr, err := tcpostgres.Run(ctx, postgresImage,
-		tcpostgres.WithDatabase("gateway"),
-		tcpostgres.WithUsername("gateway"),
-		tcpostgres.WithPassword("gateway-test"),
-		tcpostgres.BasicWaitStrategies(),
-	)
-	testcontainers.CleanupContainer(t, ctr)
-	if err != nil {
-		t.Fatalf("start postgres: %v", err)
-	}
-	dsn, err := ctr.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatalf("connection string: %v", err)
-	}
-	return ctr, config.Secret(dsn)
+	return pgtest.Start(t)
 }
 
 func openPool(t *testing.T, dsn config.Secret) *pgxpool.Pool {
@@ -90,6 +60,15 @@ func hasVectorExtension(t *testing.T, pool *pgxpool.Pool) bool {
 	return ok
 }
 
+func hasRoutesTable(t *testing.T, pool *pgxpool.Pool) bool {
+	t.Helper()
+	var ok bool
+	if err := pool.QueryRow(t.Context(), "SELECT to_regclass('public.routes') IS NOT NULL").Scan(&ok); err != nil {
+		t.Fatalf("check routes table: %v", err)
+	}
+	return ok
+}
+
 func TestMigrateUpStatusDownUp(t *testing.T) {
 	t.Parallel()
 	_, dsn := startPostgres(t)
@@ -114,17 +93,26 @@ func TestMigrateUpStatusDownUp(t *testing.T) {
 		t.Errorf("status does not report version 1 as applied:\n%s", status.String())
 	}
 
+	if !hasRoutesTable(t, pool) {
+		t.Error("the routes table is missing after migrate up")
+	}
 	if err := postgres.Migrate(ctx, discard, dsn, "down"); err != nil {
 		t.Fatalf("migrate down: %v", err)
 	}
+	if hasRoutesTable(t, pool) || !hasVectorExtension(t, pool) {
+		t.Error("the first migrate down must drop only the routes table")
+	}
+	if err := postgres.Migrate(ctx, discard, dsn, "down"); err != nil {
+		t.Fatalf("second migrate down: %v", err)
+	}
 	if hasVectorExtension(t, pool) {
-		t.Error("the vector extension is still there after migrate down")
+		t.Error("the vector extension is still there after the second migrate down")
 	}
 	if err := postgres.Migrate(ctx, discard, dsn, "up"); err != nil {
 		t.Fatalf("migrate up again: %v", err)
 	}
-	if !hasVectorExtension(t, pool) {
-		t.Error("the vector extension is missing after down then up")
+	if !hasVectorExtension(t, pool) || !hasRoutesTable(t, pool) {
+		t.Error("the vector extension or the routes table is missing after down then up")
 	}
 }
 
