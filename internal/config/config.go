@@ -72,6 +72,9 @@ type Config struct {
 
 	// OllamaBaseURL enables Ollama when set; Ollama needs no key.
 	OllamaBaseURL string
+
+	// RoutesRefreshInterval is how often the routes snapshot reloads from Postgres.
+	RoutesRefreshInterval time.Duration
 }
 
 // Addr is the listen address for the HTTP server.
@@ -142,6 +145,7 @@ func Load(lookup func(key string) (string, bool)) (Config, error) {
 	}
 	cfg.ProviderConnectTimeout = positive("PROVIDER_CONNECT_TIMEOUT", "5s")
 	cfg.ProviderFirstByteTimeout = positive("PROVIDER_FIRST_BYTE_TIMEOUT", "60s")
+	cfg.RoutesRefreshInterval = positive("ROUTES_REFRESH_INTERVAL", "10s")
 
 	baseURL := func(key, def string) string {
 		raw := get(key, def)

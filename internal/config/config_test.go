@@ -58,6 +58,9 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	if cfg.GroqAPIKey != "" || cfg.OpenAIAPIKey != "" {
 		t.Errorf("provider keys are set by default")
 	}
+	if cfg.RoutesRefreshInterval != 10*time.Second {
+		t.Errorf("RoutesRefreshInterval = %v, want 10s", cfg.RoutesRefreshInterval)
+	}
 	if cfg.OllamaBaseURL != "" {
 		t.Errorf("OllamaBaseURL = %q by default, want empty (Ollama disabled)", cfg.OllamaBaseURL)
 	}
@@ -214,6 +217,8 @@ func TestLoadRejectsInvalidSettings(t *testing.T) {
 		{"first byte timeout set but empty", map[string]string{"PROVIDER_FIRST_BYTE_TIMEOUT": ""}, "PROVIDER_FIRST_BYTE_TIMEOUT"},
 		{"groq base url without a scheme", map[string]string{"GROQ_BASE_URL": "api.groq.com/openai/v1"}, "GROQ_BASE_URL"},
 		{"openai base url with another scheme", map[string]string{"OPENAI_BASE_URL": "ftp://api.openai.com/v1"}, "OPENAI_BASE_URL"},
+		{"routes refresh interval zero", map[string]string{"ROUTES_REFRESH_INTERVAL": "0s"}, "ROUTES_REFRESH_INTERVAL"},
+		{"routes refresh interval not a duration", map[string]string{"ROUTES_REFRESH_INTERVAL": "often"}, "ROUTES_REFRESH_INTERVAL"},
 		{"ollama base url set but empty", map[string]string{"OLLAMA_BASE_URL": ""}, "OLLAMA_BASE_URL"},
 		{"ollama base url without a scheme", map[string]string{"OLLAMA_BASE_URL": "localhost:11434"}, "OLLAMA_BASE_URL"},
 		{"openai base url set but empty", map[string]string{"OPENAI_BASE_URL": ""}, "OPENAI_BASE_URL"},
