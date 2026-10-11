@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -62,6 +63,12 @@ type Config struct {
 	ProviderConnectTimeout time.Duration
 	// ProviderFirstByteTimeout bounds the wait for a provider's response headers.
 	ProviderFirstByteTimeout time.Duration
+
+	// Platform provider keys. An empty key disables that provider.
+	GroqAPIKey    Secret
+	GroqBaseURL   string
+	OpenAIAPIKey  Secret
+	OpenAIBaseURL string
 }
 
 // Addr is the listen address for the HTTP server.
@@ -132,6 +139,19 @@ func Load(lookup func(key string) (string, bool)) (Config, error) {
 	}
 	cfg.ProviderConnectTimeout = positive("PROVIDER_CONNECT_TIMEOUT", "5s")
 	cfg.ProviderFirstByteTimeout = positive("PROVIDER_FIRST_BYTE_TIMEOUT", "60s")
+
+	baseURL := func(key, def string) string {
+		raw := get(key, def)
+		u, err := url.Parse(raw)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			errs = append(errs, fmt.Errorf("%s %q: must be an http or https URL, for example %s", key, raw, def))
+		}
+		return raw
+	}
+	cfg.GroqAPIKey = Secret(get("GROQ_API_KEY", ""))
+	cfg.GroqBaseURL = baseURL("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
+	cfg.OpenAIAPIKey = Secret(get("OPENAI_API_KEY", ""))
+	cfg.OpenAIBaseURL = baseURL("OPENAI_BASE_URL", "https://api.openai.com/v1")
 
 	if v, ok := lookup("DATABASE_URL"); ok && v != "" {
 		cfg.DatabaseURL = Secret(v)

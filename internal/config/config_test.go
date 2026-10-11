@@ -55,6 +55,12 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	if cfg.ProviderFirstByteTimeout != 60*time.Second {
 		t.Errorf("ProviderFirstByteTimeout = %v, want 60s", cfg.ProviderFirstByteTimeout)
 	}
+	if cfg.GroqAPIKey != "" || cfg.OpenAIAPIKey != "" {
+		t.Errorf("provider keys are set by default")
+	}
+	if cfg.GroqBaseURL != "https://api.groq.com/openai/v1" || cfg.OpenAIBaseURL != "https://api.openai.com/v1" {
+		t.Errorf("GroqBaseURL, OpenAIBaseURL = %q, %q; want the public endpoints", cfg.GroqBaseURL, cfg.OpenAIBaseURL)
+	}
 	if string(cfg.DatabaseURL) != testDSN {
 		t.Errorf("DatabaseURL was not read")
 	}
@@ -153,6 +159,26 @@ func TestLoadParsesProviderTimeouts(t *testing.T) {
 	}
 }
 
+func TestLoadReadsProviderKeysAndBaseURLs(t *testing.T) {
+	t.Parallel()
+	cfg, err := Load(env(map[string]string{
+		"GROQ_API_KEY": "gsk_test", "OPENAI_API_KEY": "sk-test",
+		"GROQ_BASE_URL": "http://fakeprovider:8081/v1", "OPENAI_BASE_URL": "https://proxy.example/v1",
+	}))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.GroqAPIKey != "gsk_test" || cfg.OpenAIAPIKey != "sk-test" {
+		t.Error("provider keys were not read")
+	}
+	if cfg.GroqBaseURL != "http://fakeprovider:8081/v1" || cfg.OpenAIBaseURL != "https://proxy.example/v1" {
+		t.Errorf("GroqBaseURL, OpenAIBaseURL = %q, %q", cfg.GroqBaseURL, cfg.OpenAIBaseURL)
+	}
+	if out := fmt.Sprintf("%+v", cfg); strings.Contains(out, "gsk_test") || strings.Contains(out, "sk-test") {
+		t.Errorf("%%+v of Config printed a provider key: %s", out)
+	}
+}
+
 func TestLoadRejectsInvalidSettings(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -179,6 +205,9 @@ func TestLoadRejectsInvalidSettings(t *testing.T) {
 		{"connect timeout without a unit", map[string]string{"PROVIDER_CONNECT_TIMEOUT": "5"}, "PROVIDER_CONNECT_TIMEOUT"},
 		{"first byte timeout zero", map[string]string{"PROVIDER_FIRST_BYTE_TIMEOUT": "0s"}, "PROVIDER_FIRST_BYTE_TIMEOUT"},
 		{"first byte timeout set but empty", map[string]string{"PROVIDER_FIRST_BYTE_TIMEOUT": ""}, "PROVIDER_FIRST_BYTE_TIMEOUT"},
+		{"groq base url without a scheme", map[string]string{"GROQ_BASE_URL": "api.groq.com/openai/v1"}, "GROQ_BASE_URL"},
+		{"openai base url with another scheme", map[string]string{"OPENAI_BASE_URL": "ftp://api.openai.com/v1"}, "OPENAI_BASE_URL"},
+		{"openai base url set but empty", map[string]string{"OPENAI_BASE_URL": ""}, "OPENAI_BASE_URL"},
 		{"database url set but empty", map[string]string{"DATABASE_URL": ""}, "DATABASE_URL"},
 		{"max conns zero", map[string]string{"DB_MAX_CONNS": "0"}, "DB_MAX_CONNS"},
 		{"max conns negative", map[string]string{"DB_MAX_CONNS": "-3"}, "DB_MAX_CONNS"},

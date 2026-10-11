@@ -56,6 +56,10 @@ Settings come from environment variables. Both binaries, `gateway` and `gatewayc
 | `SHUTDOWN_TIMEOUT` | `20s` | A Go duration of 0 or more. How long in-flight requests get to finish after the drain. Keep `DRAIN_DELAY` plus `SHUTDOWN_TIMEOUT` below the Kubernetes grace period (30s by default). |
 | `PROVIDER_CONNECT_TIMEOUT` | `5s` | A Go duration above 0. How long to wait for a TCP connection to a provider. |
 | `PROVIDER_FIRST_BYTE_TIMEOUT` | `60s` | A Go duration above 0. How long to wait for a provider's response headers. There is no limit on the whole response, because a streamed answer can run for minutes. The default leaves room for a local model that has to load before it answers. |
+| `GROQ_API_KEY` | none | The platform key for Groq. When it is not set, Groq is disabled and the gateway logs that at startup. Never printed or logged. |
+| `GROQ_BASE_URL` | `https://api.groq.com/openai/v1` | An http or https URL: Groq's OpenAI-compatible API, or the fake provider in tests |
+| `OPENAI_API_KEY` | none | The platform key for OpenAI. When it is not set, OpenAI is disabled and the gateway logs that at startup. Never printed or logged. |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | An http or https URL: OpenAI's API, or a compatible endpoint |
 
 ## Shutdown
 
