@@ -55,7 +55,8 @@ func run(ctx context.Context, getenv func(string) (string, bool), stdout, stderr
 	srv := httpapi.NewServer(cfg.Addr(), api)
 	srv.ErrorLog = slog.NewLogLogger(log.Handler(), slog.LevelWarn)
 
-	ln, err := net.Listen("tcp", cfg.Addr())
+	var lc net.ListenConfig
+	ln, err := lc.Listen(ctx, "tcp", cfg.Addr())
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
 	}

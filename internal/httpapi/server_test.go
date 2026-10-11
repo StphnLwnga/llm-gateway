@@ -23,7 +23,7 @@ func (f checkFunc) Check(ctx context.Context) error { return f(ctx) }
 func do(t *testing.T, h http.Handler, method, path string) *httptest.ResponseRecorder {
 	t.Helper()
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(method, path, nil))
+	h.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), method, path, nil))
 	return rec
 }
 
@@ -161,7 +161,7 @@ func TestClientMessageNeverComesFromTheErrorChain(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			rec := httptest.NewRecorder()
-			writeError(rec, httptest.NewRequest(http.MethodGet, "/x", nil), discard, tc.err)
+			writeError(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/x", nil), discard, tc.err)
 			if rec.Code != http.StatusNotFound {
 				t.Errorf("status = %d, want 404: classify must still see the sentinel", rec.Code)
 			}
@@ -188,7 +188,7 @@ func TestServerErrorHidesTheInternalText(t *testing.T) {
 			var logged strings.Builder
 			log := slog.New(slog.NewTextHandler(&logged, nil))
 			rec := httptest.NewRecorder()
-			writeError(rec, httptest.NewRequest(http.MethodGet, "/v1/models", nil), log, tc.err)
+			writeError(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v1/models", nil), log, tc.err)
 
 			if rec.Code != http.StatusInternalServerError {
 				t.Fatalf("status = %d, want 500", rec.Code)

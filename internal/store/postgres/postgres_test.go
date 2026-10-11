@@ -199,7 +199,7 @@ func TestReadyzFollowsPostgres(t *testing.T) {
 
 	readyz := func() int {
 		rec := httptest.NewRecorder()
-		api.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+		api.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/readyz", nil))
 		return rec.Code
 	}
 	if got := readyz(); got != http.StatusOK {

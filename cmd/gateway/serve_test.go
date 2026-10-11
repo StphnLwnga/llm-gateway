@@ -24,7 +24,8 @@ type gateway struct {
 // startGateway adds GET /slow, which takes slowFor, or waits for release when slowFor is 0.
 func startGateway(t *testing.T, slowFor time.Duration, release <-chan struct{}, drainDelay, shutdownTimeout time.Duration) *gateway {
 	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	var lc net.ListenConfig
+	ln, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
@@ -60,8 +61,12 @@ func startGateway(t *testing.T, slowFor time.Duration, release <-chan struct{}, 
 	return g
 }
 
-func (g *gateway) get(path string) (*http.Response, error) {
-	return http.Get(g.url + path)
+func (g *gateway) get(t *testing.T, path string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, g.url+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	return http.DefaultClient.Do(req)
 }
 
 // wait returns serve's error, or fails the test if serve does not return in time.
@@ -87,7 +92,7 @@ func TestInFlightRequestFinishesDuringShutdown(t *testing.T) {
 	}
 	got := make(chan result, 1)
 	go func() {
-		resp, err := g.get("/slow")
+		resp, err := g.get(t, "/slow")
 		if err != nil {
 			got <- result{err: err}
 			return
@@ -113,7 +118,7 @@ func TestReadyzIs503DuringTheDrainDelay(t *testing.T) {
 	t.Parallel()
 	g := startGateway(t, 0, nil, 2*time.Second, 5*time.Second)
 
-	resp, err := g.get("/readyz")
+	resp, err := g.get(t, "/readyz")
 	if err != nil {
 		t.Fatalf("GET /readyz: %v", err)
 	}
@@ -126,7 +131,7 @@ func TestReadyzIs503DuringTheDrainDelay(t *testing.T) {
 
 	deadline := time.Now().Add(time.Second)
 	for {
-		resp, err := g.get("/readyz")
+		resp, err := g.get(t, "/readyz")
 		if err != nil {
 			t.Fatalf("GET /readyz during the drain: %v (the server must still accept connections)", err)
 		}
@@ -150,7 +155,7 @@ func TestShutdownTimeoutReturnsADeadlineError(t *testing.T) {
 	g := startGateway(t, 0, release, 0, 100*time.Millisecond)
 
 	go func() {
-		if resp, err := g.get("/slow"); err == nil {
+		if resp, err := g.get(t, "/slow"); err == nil {
 			_ = resp.Body.Close()
 		}
 	}()
