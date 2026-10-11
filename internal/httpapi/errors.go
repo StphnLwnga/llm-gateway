@@ -7,14 +7,13 @@ import (
 	"net/http"
 )
 
-// Sentinel errors a handler returns. Only this file maps them to a status code.
+// Sentinel errors a handler returns; classify maps them to a status.
 var (
 	ErrNotFound         = errors.New("not found")
 	ErrMethodNotAllowed = errors.New("method not allowed")
 )
 
-// errorEnvelope is the OpenAI error shape. Every error response uses it, so an
-// OpenAI SDK pointed at the gateway parses gateway errors like OpenAI's own.
+// errorEnvelope is the OpenAI error shape.
 type errorEnvelope struct {
 	Error errorBody `json:"error"`
 }
@@ -27,8 +26,6 @@ type errorBody struct {
 }
 
 // apiError pairs an internal error with the exact message the client sees.
-// The handler writes the public message; the internal chain stays for
-// classify (errors.Is on the sentinel) and for the log.
 type apiError struct {
 	err error
 	msg string
@@ -42,8 +39,7 @@ func publicError(err error, msg string) error {
 	return &apiError{err: err, msg: msg}
 }
 
-// classify maps an error to its HTTP status and OpenAI error type.
-// An error it does not know is a 500.
+// classify maps an error to its HTTP status and OpenAI error type; unknown errors are 500.
 func classify(err error) (status int, errType string) {
 	switch {
 	case errors.Is(err, ErrNotFound):
@@ -55,13 +51,11 @@ func classify(err error) (status int, errType string) {
 	}
 }
 
-// serverErrorMessage is the only text a client sees for a 5xx. The real error
-// can hold internal detail (hosts, SQL, upstream bodies), so it goes to the log.
+// serverErrorMessage replaces every 5xx message: the real error can hold internal detail.
 const serverErrorMessage = "The server had an error while processing your request."
 
-// writeError writes err in the OpenAI error shape. The client message is the
-// one set with publicError, never err.Error(): a wrapped chain can carry
-// internal detail. A 4xx with no public message gets the status text.
+// writeError writes err in the OpenAI error shape. The client message never
+// comes from err.Error(), which can carry internal detail.
 func writeError(w http.ResponseWriter, r *http.Request, log *slog.Logger, err error) {
 	status, errType := classify(err)
 	msg := http.StatusText(status)

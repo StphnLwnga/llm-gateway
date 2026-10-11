@@ -1,5 +1,4 @@
-// Command gatewayctl runs one-shot admin tasks for llm-gateway. In S0 it runs
-// schema migrations; tenants, keys and credentials arrive in S3.
+// Command gatewayctl runs one-shot admin tasks for llm-gateway.
 package main
 
 import (
@@ -40,8 +39,6 @@ func main() {
 	os.Exit(exitCode(err))
 }
 
-// exitCode follows the shell convention: 0 for success, 2 for wrong usage,
-// 1 for any other failure.
 func exitCode(err error) int {
 	switch {
 	case err == nil:
@@ -53,9 +50,7 @@ func exitCode(err error) int {
 	}
 }
 
-// run is the whole program; tests call it with fakes. The arguments are
-// checked before the config, so a wrong command prints usage even when
-// DATABASE_URL is not set.
+// run checks the arguments before the config, so usage prints even without DATABASE_URL.
 func run(ctx context.Context, args []string, getenv func(string) (string, bool), stdout, stderr io.Writer) error {
 	if len(args) != 2 || args[0] != "migrate" || (args[1] != "up" && args[1] != "down" && args[1] != "status") {
 		io.WriteString(stderr, usage)

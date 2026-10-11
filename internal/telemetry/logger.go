@@ -1,4 +1,4 @@
-// Package telemetry builds the gateway's logger. Traces and metrics arrive in S2.
+// Package telemetry builds the gateway's logger.
 package telemetry
 
 import (
@@ -6,8 +6,7 @@ import (
 	"log/slog"
 )
 
-// NewLogger returns a structured logger that writes records at level and above to w.
-// format "text" selects key=value lines; any other value selects one JSON object per line.
+// NewLogger returns a logger for level and above: text when format is "text", JSON otherwise.
 func NewLogger(w io.Writer, level slog.Level, format string) *slog.Logger {
 	opts := &slog.HandlerOptions{Level: level}
 	if format == "text" {

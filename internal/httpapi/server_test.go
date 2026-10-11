@@ -53,7 +53,6 @@ func TestHealthzIsAlways200(t *testing.T) {
 	h := New(discard, failing)
 	h.StartDraining()
 
-	// Liveness ignores dependencies and draining: restarting the pod fixes neither.
 	if rec := do(t, h, http.MethodGet, "/healthz"); rec.Code != http.StatusOK {
 		t.Errorf("GET /healthz = %d, want 200", rec.Code)
 	}
@@ -206,8 +205,7 @@ func TestServerErrorHidesTheInternalText(t *testing.T) {
 	}
 }
 
-// TestServerTimeouts pins the server's timeout decisions. net/http implements the
-// timeouts; this test makes sure they stay configured, and that WriteTimeout stays off.
+// TestServerTimeouts pins the timeouts, and that WriteTimeout stays off.
 func TestServerTimeouts(t *testing.T) {
 	t.Parallel()
 	srv := NewServer(":0", http.NotFoundHandler())

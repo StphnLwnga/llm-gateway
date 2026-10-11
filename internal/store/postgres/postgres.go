@@ -1,5 +1,4 @@
-// Package postgres is the gateway's Postgres store: the connection pool,
-// the readiness check, and the embedded schema migrations.
+// Package postgres is the gateway's Postgres store.
 package postgres
 
 import (
@@ -12,12 +11,7 @@ import (
 	"github.com/StphnLwnga/llm-gateway/internal/config"
 )
 
-// Open returns a connection pool for dsn with at most maxConns connections.
-//
-// pgxpool connects lazily: Open parses the settings and returns without
-// dialing Postgres. So the gateway starts even when Postgres is down, and
-// GET /readyz reports it until Postgres answers. The start order of services
-// then does not matter, which is what Compose and Kubernetes need.
+// Open returns a pool of at most maxConns connections without dialing Postgres.
 func Open(ctx context.Context, dsn config.Secret, maxConns int) (*pgxpool.Pool, error) {
 	pc, err := pgxpool.ParseConfig(string(dsn))
 	if err != nil {
@@ -32,13 +26,12 @@ func Open(ctx context.Context, dsn config.Secret, maxConns int) (*pgxpool.Pool, 
 	return pool, nil
 }
 
-// Pinger is the Postgres readiness check. It implements httpapi.Checker
-// without importing httpapi: the interface belongs to the code that uses it.
+// Pinger is the Postgres readiness check.
 type Pinger struct {
 	Pool *pgxpool.Pool
 }
 
-// Check returns nil when Postgres answers a ping on a pooled connection.
+// Check pings Postgres on a pooled connection.
 func (p Pinger) Check(ctx context.Context) error {
 	if err := p.Pool.Ping(ctx); err != nil {
 		return fmt.Errorf("postgres ping: %w", err)

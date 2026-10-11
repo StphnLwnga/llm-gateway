@@ -12,8 +12,7 @@ import (
 
 const testDSN = "postgres://gw:hunter2@db:5432/gateway"
 
-// env returns a lookup backed by a map. It stands in for the process
-// environment. It sets the required DATABASE_URL unless vars sets it.
+// env returns a map-backed lookup that sets DATABASE_URL unless vars does.
 func env(vars map[string]string) func(string) (string, bool) {
 	return func(key string) (string, bool) {
 		if v, ok := vars[key]; ok {
@@ -203,9 +202,7 @@ func TestSecretIsRedactedWhenPrinted(t *testing.T) {
 	}
 }
 
-// TestSecretIsRedactedOutsideFmt goes through the real slog handlers and
-// encoding/json. Each package checks only its own hook, so the fmt tests
-// above do not prove these paths.
+// TestSecretIsRedactedOutsideFmt covers paths the fmt tests cannot: each package checks only its own hook.
 func TestSecretIsRedactedOutsideFmt(t *testing.T) {
 	t.Parallel()
 	const raw = "postgres://gw:hunter2@db/gateway"
@@ -246,9 +243,7 @@ func TestSecretIsRedactedOutsideFmt(t *testing.T) {
 	}
 }
 
-// TestSecretResolvesToPlaceholderInSlog pins the path any slog handler takes,
-// including third-party handlers that never call MarshalText: slog resolves
-// a LogValuer before the handler sees the value.
+// TestSecretResolvesToPlaceholderInSlog covers handlers that never call MarshalText.
 func TestSecretResolvesToPlaceholderInSlog(t *testing.T) {
 	t.Parallel()
 	v := slog.AnyValue(Secret("hunter2")).Resolve()

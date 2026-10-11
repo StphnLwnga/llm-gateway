@@ -1,6 +1,4 @@
-# Local stack: Postgres, a one-shot migration, then the gateway.
-# Run from the repo root with `make up`. Local use only: the default password
-# below is for a laptop, never for a shared or deployed database.
+# Local use only: the default password below is never for a shared database.
 
 name: llm-gateway
 
@@ -21,10 +19,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gateway-local}
       POSTGRES_DB: gateway
     volumes:
-      # Postgres 18 images keep data in /var/lib/postgresql/18/docker (one
-      # directory per major version) and declare /var/lib/postgresql as the
-      # volume. A volume on the old /var/lib/postgresql/data path makes the
-      # entrypoint refuse to start (docker-library/postgres pull 1259).
+      # Postgres 18 keeps data in /var/lib/postgresql/18/docker. A volume on the
+      # old /var/lib/postgresql/data path makes the entrypoint refuse to start.
       - pgdata:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U gateway -d gateway"]

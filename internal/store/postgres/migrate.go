@@ -9,26 +9,20 @@ import (
 	"io/fs"
 	"log/slog"
 
-	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" database/sql driver that goose needs
+	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" driver for database/sql
 	"github.com/pressly/goose/v3"
 	"github.com/pressly/goose/v3/lock"
 
 	"github.com/StphnLwnga/llm-gateway/internal/config"
 )
 
-// Migration files are compiled into the binary, so the image needs no
-// migrations folder and the binary always runs the schema it was built with.
-// Each SQL file runs in its own transaction (goose's default).
-//
 //go:embed migrations/*.sql
 var migrationFiles embed.FS
 
 // ErrUnknownCommand is returned for a migrate command other than up, down or status.
 var ErrUnknownCommand = errors.New("unknown migrate command")
 
-// Migrate runs one goose command (up, down or status) against dsn and logs
-// the result. A Postgres advisory lock serializes concurrent runs, so two
-// migrate jobs that start together apply each migration once.
+// Migrate runs up, down or status against dsn; an advisory lock serializes concurrent runs.
 func Migrate(ctx context.Context, log *slog.Logger, dsn config.Secret, command string) error {
 	files, err := fs.Sub(migrationFiles, "migrations")
 	if err != nil {
@@ -37,8 +31,7 @@ func Migrate(ctx context.Context, log *slog.Logger, dsn config.Secret, command s
 	return migrate(ctx, log, dsn, command, files)
 }
 
-// migrate is Migrate with the migration files as an argument, so a test can
-// supply a slow migration and prove the lock.
+// migrate takes the files as an argument so a test can supply a slow migration.
 func migrate(ctx context.Context, log *slog.Logger, dsn config.Secret, command string, files fs.FS) error {
 	if command != "up" && command != "down" && command != "status" {
 		return fmt.Errorf("%w %q: use up, down or status", ErrUnknownCommand, command)
@@ -50,8 +43,7 @@ func migrate(ctx context.Context, log *slog.Logger, dsn config.Secret, command s
 	}
 	defer db.Close()
 
-	// Retry the lock every second for up to 2 minutes, instead of goose's
-	// default 5 seconds, so a waiting run continues soon after the first ends.
+	// Retry every 1s, up to 120 times (goose's default: every 5s for 5 minutes).
 	locker, err := lock.NewPostgresSessionLocker(lock.WithLockTimeout(1, 120))
 	if err != nil {
 		return fmt.Errorf("create migration lock: %w", err)

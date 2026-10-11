@@ -11,10 +11,11 @@ import (
 	"time"
 )
 
-// Secret holds a sensitive value. It prints as [redacted], or [not set] when empty, under every fmt verb.
+// Secret holds a sensitive value. It prints as [redacted], or [not set] when
+// empty, through fmt, log/slog and encoding/json; each needs its own method below.
 type Secret string
 
-// String implements fmt.Stringer and prints [not set] when the value is missing.
+// String implements fmt.Stringer.
 func (s Secret) String() string {
 	if s == "" {
 		return "[not set]"
@@ -22,21 +23,17 @@ func (s Secret) String() string {
 	return "[redacted]"
 }
 
-// Format implements fmt.Formatter, so every verb, including %d and %x, prints the placeholder.
-// Only package fmt calls it; slog's JSON handler and encoding/json do not.
+// Format implements fmt.Formatter, so every verb prints the placeholder.
 func (s Secret) Format(f fmt.State, verb rune) {
 	io.WriteString(f, s.String())
 }
 
-// LogValue implements slog.LogValuer. Package log/slog calls it when it resolves
-// an attribute, before any handler sees the value, so every handler gets the placeholder.
+// LogValue implements slog.LogValuer.
 func (s Secret) LogValue() slog.Value {
 	return slog.StringValue(s.String())
 }
 
-// MarshalText implements encoding.TextMarshaler. Package encoding/json calls it,
-// including for a Secret inside a struct that slog's JSON handler marshals, and
-// slog's text handler calls it for values it does not format itself.
+// MarshalText implements encoding.TextMarshaler.
 func (s Secret) MarshalText() ([]byte, error) {
 	return []byte(s.String()), nil
 }
@@ -53,20 +50,13 @@ type Config struct {
 	LogLevel  slog.Level
 	LogFormat string // FormatJSON or FormatText
 
-	// DrainDelay is how long the server keeps serving, with /readyz at 503, after
-	// SIGTERM and before it stops accepting connections. It gives the load balancer
-	// time to stop sending new requests. Kubernetes sets about 5s (S8).
+	// DrainDelay is how long /readyz reports 503 before the listener closes.
 	DrainDelay time.Duration
-	// ShutdownTimeout bounds how long in-flight requests get to finish after the
-	// drain. DrainDelay plus ShutdownTimeout must stay below Kubernetes' 30s
-	// grace period, or SIGKILL cuts the shutdown short.
+	// ShutdownTimeout bounds how long in-flight requests get after the drain.
 	ShutdownTimeout time.Duration
 
-	// DatabaseURL is the Postgres connection string. It is required: there is
-	// no safe default, and it holds a password, so it is a Secret.
 	DatabaseURL Secret
-	// DBMaxConns is the most connections the pool opens to Postgres.
-	DBMaxConns int
+	DBMaxConns  int
 }
 
 // Addr is the listen address for the HTTP server.
@@ -81,9 +71,7 @@ var logLevels = map[string]slog.Level{
 	"error": slog.LevelError,
 }
 
-// Load reads each setting through lookup, applies defaults to unset values,
-// parses each value into its type, and reports every invalid setting together.
-// Pass os.LookupEnv in main, and a fake in tests.
+// Load parses every setting through lookup and reports all invalid ones together.
 func Load(lookup func(key string) (string, bool)) (Config, error) {
 	get := func(key, def string) string {
 		if v, ok := lookup(key); ok {

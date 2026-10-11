@@ -21,8 +21,7 @@ type gateway struct {
 	started chan struct{}      // receives once per /slow request that has begun
 }
 
-// startGateway runs serve with the real httpapi handler plus GET /slow, which
-// takes slowFor, or waits until release is closed when slowFor is 0.
+// startGateway adds GET /slow, which takes slowFor, or waits for release when slowFor is 0.
 func startGateway(t *testing.T, slowFor time.Duration, release <-chan struct{}, drainDelay, shutdownTimeout time.Duration) *gateway {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -37,9 +36,7 @@ func startGateway(t *testing.T, slowFor time.Duration, release <-chan struct{}, 
 	mux.Handle("/", api)
 	mux.HandleFunc("GET /slow", func(w http.ResponseWriter, r *http.Request) {
 		g.started <- struct{}{}
-		// Like a real stream, the handler stops when its request context ends.
-		// That is how a test sees request contexts that wrongly derive from the
-		// signal context: SIGTERM would end them at once.
+		// Watching the request context catches a BaseContext derived from the signal.
 		var finished <-chan time.Time
 		if slowFor > 0 {
 			finished = time.After(slowFor)
@@ -127,7 +124,6 @@ func TestReadyzIs503DuringTheDrainDelay(t *testing.T) {
 
 	g.cancel()
 
-	// The flag is set right after cancel; poll briefly instead of sleeping a fixed time.
 	deadline := time.Now().Add(time.Second)
 	for {
 		resp, err := g.get("/readyz")

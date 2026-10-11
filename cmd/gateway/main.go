@@ -19,10 +19,7 @@ import (
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	// After the first signal, stop unregisters the handler and the default
-	// signal behaviour returns, so a second signal kills the process at once
-	// instead of waiting out the drain and shutdown.
-	context.AfterFunc(ctx, stop)
+	context.AfterFunc(ctx, stop) // a second signal kills the process at once
 	err := run(ctx, os.LookupEnv, os.Stdout, os.Stderr)
 	stop()
 	if err != nil {
@@ -31,10 +28,7 @@ func main() {
 	}
 }
 
-// run is the whole program. main passes the real process environment and
-// streams; tests pass fakes. ctx is cancelled on SIGINT or SIGTERM, which
-// starts the graceful shutdown in serve. stderr is unused: logs go to stdout,
-// and main prints run's error to stderr.
+// run is the whole program; tests call it with fakes. stderr is unused: logs go to stdout.
 func run(ctx context.Context, getenv func(string) (string, bool), stdout, stderr io.Writer) error {
 	cfg, err := config.Load(getenv)
 	if err != nil {
@@ -51,13 +45,11 @@ func run(ctx context.Context, getenv func(string) (string, bool), stdout, stderr
 		"db_max_conns", cfg.DBMaxConns,
 	)
 
-	// The pool connects lazily, so the gateway starts even when Postgres is
-	// down; /readyz reports 503 until Postgres answers.
 	pool, err := postgres.Open(ctx, cfg.DatabaseURL, cfg.DBMaxConns)
 	if err != nil {
 		return err
 	}
-	defer pool.Close() // after serve returns, so in-flight requests keep their connections
+	defer pool.Close()
 
 	api := httpapi.New(log, postgres.Pinger{Pool: pool})
 	srv := httpapi.NewServer(cfg.Addr(), api)

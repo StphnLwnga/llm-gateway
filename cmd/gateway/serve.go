@@ -10,18 +10,9 @@ import (
 	"time"
 )
 
-// serve runs srv on ln until ctx is cancelled, then shuts down gracefully:
-//
-//  1. startDraining makes /readyz return 503, so the load balancer stops
-//     sending new requests. The server still accepts and serves them.
-//  2. After drainDelay, Shutdown closes the listener and waits for in-flight
-//     requests, for up to shutdownTimeout.
-//  3. If requests are still running at the deadline, the remaining
-//     connections are closed and serve returns the deadline error.
-//
-// srv must keep its default BaseContext. Request contexts must NOT derive
-// from ctx: SIGTERM would then cancel every in-flight request, and every
-// stream, at once, which defeats the drain.
+// serve runs srv on ln until ctx is cancelled, then drains and shuts down.
+// srv must keep its default BaseContext: request contexts derived from ctx
+// would all end on SIGTERM.
 func serve(ctx context.Context, log *slog.Logger, ln net.Listener, srv *http.Server,
 	startDraining func(), drainDelay, shutdownTimeout time.Duration) error {
 	serveErr := make(chan error, 1)
@@ -29,7 +20,7 @@ func serve(ctx context.Context, log *slog.Logger, ln net.Listener, srv *http.Ser
 
 	select {
 	case err := <-serveErr:
-		return fmt.Errorf("serve: %w", err) // Serve stopped without a shutdown
+		return fmt.Errorf("serve: %w", err)
 	case <-ctx.Done():
 	}
 
@@ -37,12 +28,11 @@ func serve(ctx context.Context, log *slog.Logger, ln net.Listener, srv *http.Ser
 	startDraining()
 	time.Sleep(drainDelay)
 
-	// ctx is already cancelled, so the shutdown deadline cannot derive from its
-	// cancellation. WithoutCancel keeps ctx's values and drops its Done channel.
+	// ctx is already cancelled; a deadline derived from it would expire at once.
 	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		srv.Close() // cut the requests that did not finish in time
+		srv.Close()
 		return fmt.Errorf("shutdown: %w", err)
 	}
 	if err := <-serveErr; !errors.Is(err, http.ErrServerClosed) {

@@ -26,9 +26,7 @@ const postgresImage = "pgvector/pgvector:0.8.7-pg18-trixie"
 
 var discard = slog.New(slog.DiscardHandler)
 
-// startPostgres runs a throwaway Postgres container and returns it with its DSN.
-// Without Docker the test skips locally, but fails in CI (CI is set), so the
-// integration tests can never silently stop running there.
+// startPostgres skips without Docker locally, but fails in CI so the tests never silently stop.
 func startPostgres(t *testing.T) (*tcpostgres.PostgresContainer, config.Secret) {
 	t.Helper()
 	ctx := t.Context()
@@ -150,9 +148,8 @@ func TestConcurrentMigrateUpAppliesOnce(t *testing.T) {
 	}
 }
 
-// TestMigrateLockSerializesOverlappingRuns uses a migration that holds its
-// transaction for a second, so two runs must overlap. The embedded migration
-// is too fast for that: without the lock, the test above still passes.
+// TestMigrateLockSerializesOverlappingRuns exists because the embedded migration is too
+// fast to overlap: without the lock, the test above still passes.
 func TestMigrateLockSerializesOverlappingRuns(t *testing.T) {
 	t.Parallel()
 	_, dsn := startPostgres(t)
@@ -234,7 +231,7 @@ func TestOpenDoesNotPrintThePassword(t *testing.T) {
 
 func TestOpenDoesNotDialPostgres(t *testing.T) {
 	t.Parallel()
-	// Nothing listens on port 1. A lazy pool still opens, so the gateway can start.
+	// Nothing listens on port 1.
 	pool, err := postgres.Open(t.Context(), "postgres://gw:pw@127.0.0.1:1/gateway?connect_timeout=1", 4)
 	if err != nil {
 		t.Fatalf("Open with Postgres down: %v, want a pool", err)
