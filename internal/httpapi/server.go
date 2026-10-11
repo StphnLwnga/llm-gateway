@@ -46,6 +46,15 @@ func (h *Handler) StartDraining() {
 	h.draining.Store(true)
 }
 
+// Routes lists every route as "METHOD /path".
+func (h *Handler) Routes() []string {
+	var out []string
+	for _, rt := range h.routes() {
+		out = append(out, rt.method+" "+rt.path)
+	}
+	return out
+}
+
 type route struct {
 	method  string
 	path    string
