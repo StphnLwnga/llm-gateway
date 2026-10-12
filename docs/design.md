@@ -46,7 +46,7 @@ Decisions are recorded in [docs/adr/](adr/README.md).
 | No secret in logs or error bodies | Redaction tests through the real slog handlers and `encoding/json`; fixed 5xx message | Built (M0) for config and errors |
 | No known vulnerability reachable from the code | `govulncheck` in CI | Built (M0) |
 | The HTTP status is held for up to `STATUS_HOLD`, then heartbeats keep the stream open; a watchdog cuts a stream with no first event or a stalled one | End-to-end tests through the fake provider's fault modes, the watchdog's own tests, and an OpenAI Python SDK check | Built (M1) |
-| Gateway overhead over the upstream is measured | k6 p50 and p95 against a fake upstream. No target is set before the first measurement. | Planned (M1) |
+| Gateway overhead over the upstream is measured | k6 p50 and p95 against a fake upstream (`make loadtest`). No target is set before the first measurement. | Planned (M1) |
 | No usage is lost and none is counted twice when Kafka is down | Stop Kafka, send 100 requests, restart: 100 ledger rows, 0 duplicates after injected duplicates | Planned (M6) |
 | Tenant A never reaches tenant B's credential, cache entry or request log | Isolation suite that attempts each access and fails if it succeeds | Planned (M3, M11) |
 | Traces, RED metrics, time to first token and time per output token | Recorded-metrics and trace-propagation tests | Planned (M2) |

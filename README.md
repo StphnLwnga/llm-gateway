@@ -177,6 +177,47 @@ fake?tokens=5&drop_after=2:     role, "The", " quick", then the connection close
 fake?tokens=5&stall_after=2:    role, "The", " quick", then nothing until the client leaves
 ```
 
+## Measured results
+
+### Gateway overhead
+
+The gateway overhead is the latency that the gateway adds to a request. The test sends the same requests from k6 straight to the fake provider, then through the gateway to the same fake provider. The difference between the two is the overhead.
+
+```bash
+make loadtest        # build, start the loadtest stack, run all 12 cases, print the table (about 9 minutes)
+make loadtest-down   # remove the loadtest stack and its Postgres volume
+```
+
+`make loadtest` runs `loadtests/run.sh`. It starts a separate Compose project, `llm-gateway-loadtest`, from `deploy/compose.yaml` plus `deploy/compose.loadtest.yaml`. That project has its own network and Postgres volume and publishes no ports, so it can run next to the normal stack. Its gateway reads no `.env`: `OPENAI_BASE_URL` points at the fake provider, with a placeholder `OPENAI_API_KEY`. The normal stack never points at the fake. The script adds the route alias `loadtest-fake` with `gatewayctl routes add` if it is not there, so a second run reuses it. k6 (`grafana/k6:2.3.0`, pinned by digest) runs as a container on the same Compose network, so both paths cross the same network and the only difference is the gateway hop.
+
+The cases are 2 paths (direct, gateway) x 2 modes (stream, non-stream) x 3 load levels (1, 10 and 100 virtual users). Each case is a separate k6 run. The direct and gateway runs alternate at each level, so a change in the machine affects both paths.
+
+Method:
+
+- **Fake settings.** Every case uses `fake?tokens=20&tpot=5ms`: 20 tokens, 5 ms between tokens, no extra delay before the first token. The fake alone took about 110 ms per answer in a trial run: 19 gaps of 5 ms, plus the timer overshoot of each sleep. Set `TOKENS` and `TPOT` to change them.
+- **Load model.** Closed loop: each virtual user sends its next request when the previous one ends, with no think time. At 100 users, the request rate depends on the latency.
+- **Warm-up.** Each case runs 10 s of warm-up, which is not recorded, then 30 s of measurement at the same load. `WARMUP_S` and `DURATION_S` change them.
+- **The number.** The latency is k6's `http_req_duration` for the full response: from the request sent to the last byte read. k6 reads the whole body. It does not see the SSE events one by one.
+- **No time to first byte.** The fake sends stream headers at once. The gateway holds them until the first token (`STATUS_HOLD`). So TTFB measures different events on the two paths, and the table leaves it out.
+- **Non-stream through the gateway.** The gateway reads a stream from the fake and joins it. The direct path asks the fake for a non-streamed answer. Both take the same token delays.
+- **Errors.** A response counts only if it is `200` and complete: a stream must end with `data: [DONE]` and carry the 20 expected tokens; a non-streamed answer must carry the same text and finish reason `stop`. The error column is the share of responses that fail this check. A case with errors is not a valid result.
+- **Resources.** The script samples `docker stats` for the whole run and prints the peak memory and CPU of the gateway and the fake provider, and whether either container was killed or restarted. The gateway runs with `mem_limit: 128m` and the fake with `64m`. Neither has a CPU limit. k6, the gateway and the fake share the CPUs of the Docker VM.
+- **Upstream connections.** The gateway's upstream HTTP client keeps Go's default of 2 idle connections per host. With more than 2 requests in flight, most requests open a new TCP connection to the fake, and the table includes that cost. A trial run at 100 virtual users left about 21,000 gateway sockets in `TIME_WAIT`, with no errors.
+- **What is not on the path.** A request does not touch Postgres: routes come from the in-memory snapshot, so `DB_MAX_CONNS` does not limit this test. The gateway writes one log line per request at `info`, as it does in normal use.
+
+Results, from the run on the machine below. Pending: the table is filled in from the first official run.
+
+Machine: Apple M4 (10 cores), Docker Desktop, with 10 CPUs and 7.7 GiB for containers.
+
+| Mode | VUs | Direct p50 (ms) | Direct p95 (ms) | Gateway p50 (ms) | Gateway p95 (ms) | Added p50 (ms) | Added p95 (ms) | Errors |
+|---|---|---|---|---|---|---|---|---|
+| stream | 1 | | | | | | | |
+| stream | 10 | | | | | | | |
+| stream | 100 | | | | | | | |
+| non-stream | 1 | | | | | | | |
+| non-stream | 10 | | | | | | | |
+| non-stream | 100 | | | | | | | |
+
 ## CI
 
 Every pull request and every push to `main` runs four jobs in GitHub Actions (`.github/workflows/ci.yml`):
@@ -215,10 +256,15 @@ Every pull request and every push to `main` runs four jobs in GitHub Actions (`.
 ├── deploy/
 │   ├── docker/
 │   │   └── Dockerfile       distroless, non-root images: the gateway (default target) and the fake provider
-│   └── compose.yaml         the local stack: Postgres (pgvector), migrate, gateway
+│   ├── compose.yaml         the local stack: Postgres (pgvector), migrate, gateway
+│   └── compose.loadtest.yaml the overhead test stack: the gateway pointed at the fake provider, and k6
 ├── docs/
 │   ├── design.md            the system design
 │   └── adr/                 architecture decision records
+├── loadtests/
+│   ├── k6/
+│   │   └── overhead.js      one overhead case: one path, one mode, one VU level
+│   └── run.sh               runs every overhead case and prints the table (make loadtest)
 ├── .github/                 CI workflow, Dependabot, pull request template
 ├── .golangci.yml            lint settings
 └── readme_test.go           fails when this README misses a setting, route, package or fake directive
