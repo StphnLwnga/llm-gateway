@@ -330,6 +330,7 @@ func TestChunkTimings(t *testing.T) {
 			{after: 50 * time.Millisecond, event: Event{Usage: &Usage{PromptTokens: 1, CompletionTokens: 2}}},
 		})
 		slowCaller := func(Event) error { time.Sleep(time.Second); return nil }
+		time.Sleep(time.Minute) // one decorator serves many calls, so each call starts its own clock
 		if err := r.g.Stream(t.Context(), chatReq, slowCaller); err != nil {
 			t.Fatal(err)
 		}
@@ -409,18 +410,20 @@ func TestErrorsAreClassifiedByKind(t *testing.T) {
 
 	t.Run("a cancel is not a fault", func(t *testing.T) {
 		t.Parallel()
-		r := observe(t, steps{{after: time.Millisecond, event: Event{Delta: "partial"}}, {after: time.Hour, event: Event{Delta: "never"}}})
-		ctx, cancel := context.WithCancel(t.Context())
-		err := r.g.Stream(ctx, chatReq, func(Event) error { cancel(); return nil })
-		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("err = %v, want context.Canceled", err)
-		}
-		s := r.only(t, spanName)
-		a := attrMap(s.Attributes())
-		if a["error.type"] != "cancelled" || s.Status().Code != codes.Unset || a["gen_ai.response.finish_reasons"] != `["error"]` {
-			t.Errorf("error.type %q, status %v, finish_reasons %s; want cancelled, Unset, [\"error\"]",
-				a["error.type"], s.Status().Code, a["gen_ai.response.finish_reasons"])
-		}
+		synctest.Test(t, func(t *testing.T) {
+			r := observe(t, steps{{after: time.Millisecond, event: Event{Delta: "partial"}}, {after: time.Hour, event: Event{Delta: "never"}}})
+			ctx, cancel := context.WithCancel(t.Context())
+			err := r.g.Stream(ctx, chatReq, func(Event) error { cancel(); return nil })
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("err = %v, want context.Canceled: the caller's cancel must reach the upstream", err)
+			}
+			s := r.only(t, spanName)
+			a := attrMap(s.Attributes())
+			if a["error.type"] != "cancelled" || s.Status().Code != codes.Unset || a["gen_ai.response.finish_reasons"] != `["error"]` {
+				t.Errorf("error.type %q, status %v, finish_reasons %s; want cancelled, Unset, [\"error\"]",
+					a["error.type"], s.Status().Code, a["gen_ai.response.finish_reasons"])
+			}
+		})
 	})
 }
 

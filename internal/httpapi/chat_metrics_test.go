@@ -89,9 +89,12 @@ func finish(t *testing.T, g gateway, resp *http.Response) {
 func TestStreamCommitsAreCountedByReason(t *testing.T) {
 	t.Parallel()
 	reader, mp := metered(t)
-	for _, model := range []string{"fake?tokens=3", "fake?first_token=400ms&tokens=2", "fake?status=502"} {
+	for model, stream := range map[string]bool{
+		"fake?tokens=3": true, "fake?first_token=400ms&tokens=2": true, "fake?status=502": true,
+		"fake?tokens=4": false, // a non-streamed answer sends its status at the end, with no hold
+	} {
 		g := start(t, setup{upstreamModel: model, hold: 100 * time.Millisecond, meter: mp})
-		resp := post(t.Context(), t, g, body(true, ""))
+		resp := post(t.Context(), t, g, body(stream, ""))
 		finish(t, g, resp)
 		_ = resp.Body.Close()
 	}
