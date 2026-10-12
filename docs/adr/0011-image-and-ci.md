@@ -61,7 +61,7 @@ Chosen: one race job with testcontainers. The tests skip without Docker locally,
 - `permissions: contents: read`, so the job token cannot push.
 - `concurrency` with `cancel-in-progress`, so a new push to the same ref cancels the old run.
 - **Toolchain pin.** `go.mod` has `go 1.26.0` and `toolchain go1.26.9`, and the Docker builder is `golang:1.26.9-bookworm`. govulncheck found 12 reachable standard-library vulnerabilities in go1.26.4, all fixed by 1.26.9. setup-go reads the `toolchain` line, and with `GOTOOLCHAIN=auto` an older local Go switches to 1.26.9.
-- `readme_test.go` fails when a setting, a route or a package folder is missing from the README. Each item must start its own README line, so a mention in another row does not count.
+- `readme_test.go` fails when a setting, a route or a package folder is missing from the docs. Settings are checked in `docs/configuration.md`, routes in `docs/api.md`, and packages in the README project layout. Each item must start its own line, so a mention in another row does not count.
 
 ## Consequences
 

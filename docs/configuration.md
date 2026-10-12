@@ -1,0 +1,28 @@
+# Configuration
+
+Settings come from environment variables. The gateway and the admin CLI read the same settings. The gateway reports every invalid setting together at startup, then exits with code 1.
+
+Provider keys go in a `.env` file at the repo root, which Compose passes to the gateway. The [development guide](development.md) gives the local setup.
+
+| Variable | Default | Accepted values |
+|---|---|---|
+| `DATABASE_URL` | none, required | A Postgres connection string, for example `postgres://user:password@host:5432/db`. Never printed or logged. |
+| `DB_MAX_CONNS` | `10` | A whole number from 1 to 1000: the most connections the pool opens |
+| `PORT` | `8080` | A number from 1 to 65535 |
+| `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
+| `LOG_FORMAT` | `json` | `json` or `text` |
+| `DRAIN_DELAY` | `0s` | A Go duration of 0 or more, for example `5s`. After SIGTERM, how long `/readyz` returns 503 while the server still serves, so the load balancer stops sending traffic. |
+| `SHUTDOWN_TIMEOUT` | `20s` | A Go duration of 0 or more. How long in-flight requests get to finish after the drain. Keep `DRAIN_DELAY` plus `SHUTDOWN_TIMEOUT` below the Kubernetes grace period (30s by default). |
+| `PROVIDER_CONNECT_TIMEOUT` | `5s` | A Go duration above 0. How long to wait for a TCP connection to a provider. |
+| `PROVIDER_FIRST_BYTE_TIMEOUT` | `60s` | A Go duration above 0. How long to wait for a provider's response headers. Some providers send headers before the first token, so this is not a time-to-first-token limit; `PROVIDER_FIRST_TOKEN_TIMEOUT` is. There is no limit on the whole response. The default leaves room for a local model that has to load before it answers. |
+| `PROVIDER_FIRST_TOKEN_TIMEOUT` | `60s` | A Go duration above 0. How long a stream may wait for its first event, reasoning progress included. When it passes, the request fails with a timeout. |
+| `STREAM_STALL_TIMEOUT` | `30s` | A Go duration above 0. The longest gap allowed between two stream events. |
+| `STATUS_HOLD` | `3s` | A Go duration of 0 or more. How long a streamed request waits for the first token before it sends `200` and starts heartbeats. An error in that time gets a real HTTP status. |
+| `HEARTBEAT_INTERVAL` | `10s` | A Go duration above 0. The gap between SSE comment heartbeats (`: heartbeat`) while a committed stream waits for its first token. |
+| `REQUEST_MAX_BYTES` | `4194304` | A whole number of bytes from 1024 to 67108864: the largest request body the gateway reads. |
+| `GROQ_API_KEY` | none | The platform key for Groq. When it is not set, Groq is disabled and the gateway logs that at startup. Never printed or logged. |
+| `GROQ_BASE_URL` | `https://api.groq.com/openai/v1` | An http or https URL: Groq's OpenAI-compatible API, or the fake provider in tests |
+| `OPENAI_API_KEY` | none | The platform key for OpenAI. When it is not set, OpenAI is disabled and the gateway logs that at startup. Never printed or logged. |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | An http or https URL: OpenAI's API, or a compatible endpoint |
+| `OLLAMA_BASE_URL` | none | An http or https URL, for example `http://localhost:11434`. Ollama is enabled only when this is set; it needs no key. From inside Compose, Ollama on the host is `http://host.docker.internal:11434`. |
+| `ROUTES_REFRESH_INTERVAL` | `10s` | A Go duration above 0. How often the gateway reloads the routes table into memory. A change made with `gatewayctl routes` takes effect within one interval. |
