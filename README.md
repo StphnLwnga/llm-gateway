@@ -205,31 +205,42 @@ Method:
 - **Resources.** The script samples `docker stats` for the whole run and prints the peak memory and CPU of the gateway and the fake provider, and whether either container was killed or restarted. The gateway runs with `mem_limit: 128m` and the fake with `64m`. Neither has a CPU limit. k6, the gateway and the fake share the CPUs of the Docker VM.
 - **What is not on the path.** A request does not touch Postgres: routes come from the in-memory snapshot, so `DB_MAX_CONNS` does not limit this test. The gateway writes one log line per request at `info`, as it does in normal use.
 
-Results, from the run on the machine below. Pending: the tables are filled in from the first official run.
+Results, from the run of 2026-10-12 on the machine below, as `make loadtest` printed them. Each case had a 10 s warm-up and 30 s measured.
 
-Machine: Apple M4 (10 cores), Docker Desktop, with 10 CPUs and 7.7 GiB for containers.
+Machine: Darwin arm64, Apple M4. Docker Desktop, with 10 CPUs and 8,319,504,384 bytes (7.7 GiB) for containers.
 
 5 ms between tokens (`fake?tokens=20&tpot=5ms`):
 
-| Mode | VUs | Direct p50 (ms) | Direct p95 (ms) | Gateway p50 (ms) | Gateway p95 (ms) | Added p50 (ms) | Added p95 (ms) | Errors | TW peak |
-|---|---|---|---|---|---|---|---|---|---|
-| stream | 1 | | | | | | | | |
-| stream | 10 | | | | | | | | |
-| stream | 100 | | | | | | | | |
-| non-stream | 1 | | | | | | | | |
-| non-stream | 10 | | | | | | | | |
-| non-stream | 100 | | | | | | | | |
+| Mode | VUs | Direct p50 (ms) | Direct p95 (ms) | Direct req/s | Direct err % | Gateway p50 (ms) | Gateway p95 (ms) | Gateway req/s | Gateway err % | TW peak | Added p50 (ms) | Added p95 (ms) |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| stream | 1 | 109.67 | 113.11 | 9.1 | 0.00 | 111.54 | 115.29 | 8.9 | 0.00 | 0 | 1.87 | 2.18 |
+| stream | 10 | 109.53 | 113.87 | 91.0 | 0.00 | 112.65 | 122.01 | 87.5 | 0.00 | 0 | 3.12 | 8.14 |
+| stream | 100 | 107.48 | 112.93 | 922.4 | 0.00 | 107.46 | 111.33 | 927.8 | 0.00 | 0 | -0.02 | -1.60 |
+| non-stream | 1 | 110.21 | 114.23 | 9.1 | 0.00 | 111.46 | 115.78 | 8.8 | 0.00 | 0 | 1.25 | 1.55 |
+| non-stream | 10 | 109.66 | 114.27 | 90.8 | 0.00 | 110.94 | 115.35 | 90.0 | 0.00 | 0 | 1.28 | 1.08 |
+| non-stream | 100 | 108.05 | 114.24 | 919.9 | 0.00 | 106.88 | 111.02 | 934.0 | 0.00 | 0 | -1.17 | -3.22 |
 
 0 ms between tokens (`fake?tokens=20&tpot=0ms`):
 
-| Mode | VUs | Direct p50 (ms) | Direct p95 (ms) | Gateway p50 (ms) | Gateway p95 (ms) | Added p50 (ms) | Added p95 (ms) | Errors | TW peak |
-|---|---|---|---|---|---|---|---|---|---|
-| stream | 1 | | | | | | | | |
-| stream | 10 | | | | | | | | |
-| stream | 100 | | | | | | | | |
-| non-stream | 1 | | | | | | | | |
-| non-stream | 10 | | | | | | | | |
-| non-stream | 100 | | | | | | | | |
+| Mode | VUs | Direct p50 (ms) | Direct p95 (ms) | Direct req/s | Direct err % | Gateway p50 (ms) | Gateway p95 (ms) | Gateway req/s | Gateway err % | TW peak | Added p50 (ms) | Added p95 (ms) |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| stream | 1 | 0.13 | 0.18 | 4759.8 | 0.00 | 0.35 | 0.73 | 2020.9 | 0.00 | 0 | 0.22 | 0.55 |
+| stream | 10 | 0.27 | 0.82 | 20192.6 | 0.00 | 1.74 | 3.49 | 4739.5 | 0.00 | 0 | 1.47 | 2.67 |
+| stream | 100 | 2.01 | 13.10 | 22017.5 | 0.00 | 12.51 | 29.79 | 6939.7 | 0.00 | 3 | 10.50 | 16.69 |
+| non-stream | 1 | 0.06 | 0.08 | 12191.9 | 0.00 | 0.35 | 0.61 | 2595.4 | 0.00 | 0 | 0.29 | 0.53 |
+| non-stream | 10 | 0.13 | 0.30 | 53770.0 | 0.00 | 1.01 | 1.94 | 8845.9 | 0.00 | 0 | 0.88 | 1.64 |
+| non-stream | 100 | 0.74 | 3.15 | 83428.7 | 0.00 | 6.68 | 15.62 | 13448.3 | 0.00 | 12 | 5.94 | 12.47 |
+
+Peaks for the whole run: the fake provider used 33.3 MiB of its 64 MiB and 434% CPU; the gateway used 69.4 MiB of its 128 MiB and 414% CPU. Neither container was OOM-killed, and both had 0 restarts.
+
+Reading the results:
+
+- **5 ms between tokens.** The gateway adds 1 to 3 ms p50 at 1 and 10 VUs. At 100 VUs it adds about 0, which is within the timer noise of the fake. A negative value is noise.
+- **0 ms, 1 VU.** The gateway's own cost is about 0.2 to 0.3 ms p50 per request.
+- **0 ms, 10 and 100 VUs.** Both paths are CPU-bound. k6, the gateway and the fake share the 10 CPUs of the Docker VM, and the gateway and the fake each peaked at about 4 cores. So the added latency at 100 VUs is mostly queueing for CPU. It is not the cost per request, and it is not a capacity figure. Little's law agrees with the closed loop: 6,939.7 req/s x 12.51 ms is about 87 requests in flight, against 100 VUs.
+- **Stream against non-stream.** A stream costs the gateway about twice as much as a non-streamed answer: 6,940 against 13,448 req/s at 100 VUs. Both read 20 upstream events. A stream also writes and flushes 20 events to the client, but a non-streamed answer writes one JSON body.
+- **Stream at 10 VUs.** The added p95 was higher than at the other levels, in a trial run (10.73 ms) and in this run (8.14 ms). The cause is not known yet. A trace per stage of the request (M2, observability) can show it.
+- **TW peak 3 and 12.** At 0 ms and 100 VUs, a few gateway sockets to the fake were in `TIME_WAIT`. The probable cause, not confirmed, is the connections closed when k6 cancels the requests in flight at the end of each scenario. The count stays far below the ephemeral port range.
 
 ## CI
 
