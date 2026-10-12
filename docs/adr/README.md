@@ -19,3 +19,4 @@ Each file records one decision in a trimmed MADR form (see [0001](0001-record-de
 | [0013](0013-provider-credentials.md) | Provider credentials: platform keys and tenant keys, the tenant key wins | Accepted | M1 (platform keys), M3 (planned) |
 | [0014](0014-routes-in-postgres.md) | Routes in a Postgres table, served from an in-memory snapshot | Accepted | M1, M4 (planned) |
 | [0015](0015-streaming-responses.md) | Streaming responses: status hold, heartbeats and a liveness watchdog | Accepted | M1 |
+| [0016](0016-observability.md) | Observability: the OpenTelemetry SDK, no tenant label on metrics, OTLP to a collector, tail sampling | Accepted | M2 (in progress) |
