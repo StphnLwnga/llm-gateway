@@ -80,12 +80,13 @@ type usage struct {
 	QueueTime      *float64 `json:"queue_time"`
 	PromptTime     *float64 `json:"prompt_time"`
 	CompletionTime *float64 `json:"completion_time"`
+	TotalTime      *float64 `json:"total_time"`
 }
 
 func (u usage) toProvider() provider.Usage {
 	out := provider.Usage{PromptTokens: u.PromptTokens, CompletionTokens: u.CompletionTokens, TotalTokens: u.TotalTokens}
-	t := provider.Timings{Queue: seconds(u.QueueTime), Prefill: seconds(u.PromptTime), Decode: seconds(u.CompletionTime)}
-	if t.Queue != nil || t.Prefill != nil || t.Decode != nil {
+	t := provider.Timings{Queue: seconds(u.QueueTime), Prefill: seconds(u.PromptTime), Decode: seconds(u.CompletionTime), Total: seconds(u.TotalTime)}
+	if t != (provider.Timings{}) {
 		out.Timings = &t
 	}
 	return out

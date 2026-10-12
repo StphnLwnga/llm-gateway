@@ -362,14 +362,18 @@ func timings(u *provider.Usage) string {
 	if u == nil || u.Timings == nil {
 		return "none"
 	}
-	return fmt.Sprintf("queue=%s load=%s prefill=%s decode=%s", dur(u.Timings.Queue), dur(u.Timings.Load), dur(u.Timings.Prefill), dur(u.Timings.Decode))
+	return fmt.Sprintf("queue=%s load=%s prefill=%s decode=%s total=%s",
+		dur(u.Timings.Queue), dur(u.Timings.Load), dur(u.Timings.Prefill), dur(u.Timings.Decode), dur(u.Timings.Total))
 }
 
 func TestGroqTimingsAreConvertedFromSeconds(t *testing.T) {
 	t.Parallel()
 	cases := []struct{ file, want string }{
-		// recorded from Groq
-		{"groq_stream_recorded.sse", "queue=83.29193ms load=unset prefill=1.039105ms decode=7.396903ms"},
+		// recorded from Groq: the finish chunk has the usage in usage and in x_groq.usage
+		{"groq_stream_recorded.sse", "queue=83.29193ms load=unset prefill=1.039105ms decode=7.396903ms total=8.436008ms"},
+		{"groq_reasoning_stream_recorded.sse", "queue=214.856063ms load=unset prefill=3.997794ms decode=37.007061ms total=41.004855ms"},
+		// constructed from the Groq API reference: the usage only in x_groq.usage
+		{"groq_stream_xgroq_constructed.sse", "queue=10ms load=unset prefill=680.594µs decode=3.3ms total=4ms"},
 		// constructed from the OpenAI API reference: OpenAI reports no timings
 		{"openai_stream_constructed.sse", "none"},
 	}
@@ -400,7 +404,7 @@ func TestGroqTimingsAreConvertedFromSeconds(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Chat: %v", err)
 		}
-		if got, want := timings(&resp.Usage), "queue=88.860954ms load=unset prefill=1.035525ms decode=7.399842ms"; got != want {
+		if got, want := timings(&resp.Usage), "queue=88.860954ms load=unset prefill=1.035525ms decode=7.399842ms total=8.435367ms"; got != want {
 			t.Errorf("timings = %s, want %s", got, want)
 		}
 	})

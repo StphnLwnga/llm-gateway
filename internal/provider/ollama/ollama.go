@@ -69,6 +69,7 @@ type response struct {
 	LoadDuration       *int64 `json:"load_duration"`
 	PromptEvalDuration *int64 `json:"prompt_eval_duration"`
 	EvalDuration       *int64 `json:"eval_duration"`
+	TotalDuration      *int64 `json:"total_duration"`
 	Error              string `json:"error"`
 }
 
@@ -219,8 +220,8 @@ func usageOf(r response) provider.Usage {
 	} else {
 		u.PromptTokensUnknown = true
 	}
-	t := provider.Timings{Load: nanos(r.LoadDuration), Prefill: nanos(r.PromptEvalDuration), Decode: nanos(r.EvalDuration)}
-	if t.Load != nil || t.Prefill != nil || t.Decode != nil {
+	t := provider.Timings{Load: nanos(r.LoadDuration), Prefill: nanos(r.PromptEvalDuration), Decode: nanos(r.EvalDuration), Total: nanos(r.TotalDuration)}
+	if t != (provider.Timings{}) {
 		u.Timings = &t
 	}
 	return u

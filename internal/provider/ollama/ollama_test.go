@@ -176,8 +176,9 @@ func TestFinalLineCarriesUsageAndNanosecondTimings(t *testing.T) {
 	if u.Timings == nil {
 		t.Fatal("no timings")
 	}
-	got := fmt.Sprintf("queue=%s load=%s prefill=%s decode=%s", dur(u.Timings.Queue), dur(u.Timings.Load), dur(u.Timings.Prefill), dur(u.Timings.Decode))
-	if want := "queue=unset load=1.334875ms prefill=342.546ms decode=4.535599s"; got != want {
+	got := fmt.Sprintf("queue=%s load=%s prefill=%s decode=%s total=%s",
+		dur(u.Timings.Queue), dur(u.Timings.Load), dur(u.Timings.Prefill), dur(u.Timings.Decode), dur(u.Timings.Total))
+	if want := "queue=unset load=1.334875ms prefill=342.546ms decode=4.535599s total=4.883583458s"; got != want {
 		t.Errorf("timings = %s, want %s", got, want)
 	}
 }
@@ -194,8 +195,8 @@ func TestMissingPromptEvalCountIsUnknownNotZero(t *testing.T) {
 	if u == nil || !u.PromptTokensUnknown || u.PromptTokens != 0 || u.TotalTokens != 0 || u.CompletionTokens != 3 {
 		t.Errorf("usage = %+v, want prompt unknown, total 0, completion 3", u)
 	}
-	if u != nil && u.Timings != nil && (u.Timings.Load != nil || u.Timings.Prefill != nil) {
-		t.Errorf("timings = %+v, want load and prefill unset", u.Timings)
+	if u != nil && u.Timings != nil && (u.Timings.Load != nil || u.Timings.Prefill != nil || u.Timings.Total != nil) {
+		t.Errorf("timings = %+v, want load, prefill and total unset", u.Timings)
 	}
 }
 
@@ -317,8 +318,8 @@ func TestRecordedFixtures(t *testing.T) {
 	t.Parallel()
 	// recorded from Ollama 0.40.3 (llama3.2:3b); see testdata/README.md
 	wantTimings := map[string]string{
-		"ollama_stream_recorded.ndjson": "load=51.284584ms prefill=131.822ms decode=116.869ms",
-		"ollama_chat_recorded.json":     "load=2.609541ms prefill=22.913ms decode=111.514ms",
+		"ollama_stream_recorded.ndjson": "load=51.284584ms prefill=131.822ms decode=116.869ms total=346.482167ms",
+		"ollama_chat_recorded.json":     "load=2.609541ms prefill=22.913ms decode=111.514ms total=139.11275ms",
 	}
 	check := func(t *testing.T, file, content, finish, model string, u provider.Usage) {
 		t.Helper()
@@ -334,7 +335,7 @@ func TestRecordedFixtures(t *testing.T) {
 		if u.Timings == nil {
 			t.Fatal("no timings")
 		}
-		got := fmt.Sprintf("load=%s prefill=%s decode=%s", dur(u.Timings.Load), dur(u.Timings.Prefill), dur(u.Timings.Decode))
+		got := fmt.Sprintf("load=%s prefill=%s decode=%s total=%s", dur(u.Timings.Load), dur(u.Timings.Prefill), dur(u.Timings.Decode), dur(u.Timings.Total))
 		if got != wantTimings[file] {
 			t.Errorf("timings = %s, want %s", got, wantTimings[file])
 		}

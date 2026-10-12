@@ -45,6 +45,9 @@ type Timings struct {
 	Load    *time.Duration
 	Prefill *time.Duration
 	Decode  *time.Duration
+	// Total is the provider's own total, which each provider bounds
+	// differently: Groq's leaves out the queue, Ollama's includes the load.
+	Total *time.Duration
 }
 
 // Event is one step of a streamed answer: a text delta, the final usage, the
