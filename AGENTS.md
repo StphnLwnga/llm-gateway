@@ -11,7 +11,8 @@ design is in `docs/design.md` and the decisions are in `docs/adr/`.
 
 - One branch and one pull request per milestone, named `feat/sNN-<name>`.
 - Merge commits only. No squash, no rebase merge.
-- The README is updated in the same pull request as the code it describes.
+- The README and the pages in `docs/` are updated in the same pull request as
+  the code they describe.
 
 ## Commits
 

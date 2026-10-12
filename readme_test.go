@@ -14,13 +14,13 @@ import (
 	"github.com/StphnLwnga/llm-gateway/internal/httpapi"
 )
 
-// readmeLines returns the README's lines; each item must start a line, so a
-// mention inside another row does not count as documenting it.
-func readmeLines(t *testing.T) []string {
+// docLines returns a doc's lines; each item must start a line, so a mention
+// inside another row does not count as documenting it.
+func docLines(t *testing.T, path string) []string {
 	t.Helper()
-	b, err := os.ReadFile("README.md")
+	b, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("read README.md: %v", err)
+		t.Fatalf("read %s: %v", path, err)
 	}
 	return strings.Split(string(b), "\n")
 }
@@ -34,7 +34,7 @@ func hasLinePrefix(lines []string, prefix string) bool {
 	return false
 }
 
-func TestREADMEDocumentsEverySetting(t *testing.T) {
+func TestConfigurationDocListsEverySetting(t *testing.T) {
 	var keys []string
 	record := func(key string) (string, bool) {
 		keys = append(keys, key)
@@ -44,37 +44,37 @@ func TestREADMEDocumentsEverySetting(t *testing.T) {
 	if len(keys) == 0 {
 		t.Fatal("config.Load asked for no settings")
 	}
-	lines := readmeLines(t)
+	lines := docLines(t, "docs/configuration.md")
 	for _, key := range keys {
 		if !hasLinePrefix(lines, "| `"+key+"` |") {
-			t.Errorf("README.md has no configuration row for %s", key)
+			t.Errorf("docs/configuration.md has no row for %s", key)
 		}
 	}
 }
 
-func TestREADMEDocumentsEveryRoute(t *testing.T) {
+func TestAPIDocListsEveryRoute(t *testing.T) {
 	routes := httpapi.New(slog.New(slog.DiscardHandler), httpapi.Deps{}).Routes()
 	if len(routes) == 0 {
 		t.Fatal("httpapi registered no routes")
 	}
-	lines := readmeLines(t)
+	lines := docLines(t, "docs/api.md")
 	for _, r := range routes {
 		if !hasLinePrefix(lines, "| `"+r+"` |") {
-			t.Errorf("README.md has no endpoint row for %s", r)
+			t.Errorf("docs/api.md has no endpoint row for %s", r)
 		}
 	}
 }
 
-func TestREADMEDocumentsEveryFakeDirective(t *testing.T) {
-	lines := readmeLines(t)
+func TestFakeProviderDocListsEveryDirective(t *testing.T) {
+	lines := docLines(t, "docs/fake-provider.md")
 	for _, d := range fakeupstream.Directives() {
 		if !hasLinePrefix(lines, "| `"+d+"` |") {
-			t.Errorf("README.md has no fault mode row for %s", d)
+			t.Errorf("docs/fake-provider.md has no fault mode row for %s", d)
 		}
 	}
 }
 
-func TestREADMEDocumentsEveryPackage(t *testing.T) {
+func TestREADMELayoutListsEveryPackage(t *testing.T) {
 	dirs := map[string]bool{}
 	err := filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -94,7 +94,7 @@ func TestREADMEDocumentsEveryPackage(t *testing.T) {
 	if len(dirs) == 0 {
 		t.Fatal("found no Go packages")
 	}
-	paths := layoutPaths(t, readmeLines(t))
+	paths := layoutPaths(t, docLines(t, "README.md"))
 	for dir := range dirs {
 		if !paths[dir+"/"] {
 			t.Errorf("README.md project layout does not list %s/", dir)

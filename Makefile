@@ -26,7 +26,7 @@ logs:
 migrate-status:
 	$(COMPOSE) run --rm migrate migrate status
 
-## loadtest: measure the latency the gateway adds, against the fake provider (see README)
+## loadtest: measure the latency the gateway adds, against the fake provider (see docs/benchmarks.md)
 loadtest:
 	loadtests/run.sh
 
