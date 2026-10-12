@@ -11,7 +11,10 @@ import (
 // firstByte bounds only the wait for the response headers. Some providers send
 // headers before the first token, so the first-token limit is the Watchdog's.
 func NewHTTPClient(connect, firstByte time.Duration) *http.Client {
-	t := http.DefaultTransport.(*http.Transport).Clone() // keeps the proxy, HTTP/2 and pool defaults
+	t := http.DefaultTransport.(*http.Transport).Clone() // keeps the proxy and HTTP/2 defaults
+	// Go's default of 2 idle per host makes concurrent HTTP/1.1 upstreams (Ollama, vLLM) dial on most requests.
+	t.MaxIdleConnsPerHost = 256
+	t.MaxIdleConns = 1024
 	t.DialContext = (&net.Dialer{Timeout: connect, KeepAlive: 30 * time.Second}).DialContext
 	t.TLSHandshakeTimeout = 10 * time.Second
 	t.ResponseHeaderTimeout = firstByte

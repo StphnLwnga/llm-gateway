@@ -3,8 +3,11 @@ package provider
 import (
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -66,5 +69,48 @@ func TestHTTPClientTimesOutWaitingForHeaders(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed > time.Second {
 		t.Errorf("timed out after %v, want about 50ms", elapsed)
+	}
+}
+
+func TestHTTPClientReusesConnectionsUnderConcurrency(t *testing.T) {
+	t.Parallel()
+	var dialed atomic.Int64
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(2 * time.Millisecond) // keeps all workers in flight at once
+		_, _ = io.WriteString(w, "ok")
+	}))
+	srv.Config.ConnState = func(_ net.Conn, s http.ConnState) {
+		if s == http.StateNew {
+			dialed.Add(1)
+		}
+	}
+	srv.Start()
+	t.Cleanup(srv.Close)
+
+	const workers, perWorker = 50, 10
+	client := NewHTTPClient(time.Second, time.Second)
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Go(func() {
+			for range perWorker {
+				req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				resp, err := client.Do(req)
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				_, _ = io.Copy(io.Discard, resp.Body)
+				_ = resp.Body.Close()
+			}
+		})
+	}
+	wg.Wait()
+
+	if n := dialed.Load(); n > workers+5 {
+		t.Errorf("%d workers x %d requests opened %d connections, want at most %d", workers, perWorker, n, workers+5)
 	}
 }
