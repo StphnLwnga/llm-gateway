@@ -320,8 +320,11 @@ func TestRecordedFixtures(t *testing.T) {
 		"ollama_stream_recorded.ndjson": "load=51.284584ms prefill=131.822ms decode=116.869ms",
 		"ollama_chat_recorded.json":     "load=2.609541ms prefill=22.913ms decode=111.514ms",
 	}
-	check := func(t *testing.T, file, content, finish string, u provider.Usage) {
+	check := func(t *testing.T, file, content, finish, model string, u provider.Usage) {
 		t.Helper()
+		if model != "llama3.2:3b" {
+			t.Errorf("model = %q, want llama3.2:3b", model)
+		}
 		if content != "Red, Blue, Yellow" || finish != "stop" {
 			t.Errorf("content, finish = %q, %q; want %q, stop", content, finish, "Red, Blue, Yellow")
 		}
@@ -348,7 +351,12 @@ func TestRecordedFixtures(t *testing.T) {
 		if ev.Usage == nil {
 			t.Fatal("no usage")
 		}
-		check(t, "ollama_stream_recorded.ndjson", text(evs), ev.FinishReason, *ev.Usage)
+		for _, e := range evs {
+			if e.Model != "llama3.2:3b" {
+				t.Errorf("event %+v names model %q, want llama3.2:3b on every event", e, e.Model)
+			}
+		}
+		check(t, "ollama_stream_recorded.ndjson", text(evs), ev.FinishReason, ev.Model, *ev.Usage)
 	})
 
 	t.Run("chat", func(t *testing.T) {
@@ -358,6 +366,6 @@ func TestRecordedFixtures(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Chat: %v", err)
 		}
-		check(t, "ollama_chat_recorded.json", resp.Content, resp.FinishReason, resp.Usage)
+		check(t, "ollama_chat_recorded.json", resp.Content, resp.FinishReason, resp.Model, resp.Usage)
 	})
 }
