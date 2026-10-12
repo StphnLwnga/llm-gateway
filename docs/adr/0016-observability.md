@@ -9,7 +9,7 @@
 
 The gateway needs traces, RED metrics and the GenAI latency and token metrics, and log lines that link to traces. It is multi-tenant, so every signal could carry a tenant ID. It runs on Compose, kind, EKS and GKE Autopilot ([0006](0006-deploy-targets.md)), so the backend differs per target. A streamed request can last minutes, and most requests succeed quickly, so keeping every trace costs storage for little value.
 
-Seventeen decisions follow. Four are about the signals: which labels metrics carry, which library records them, how they leave the process, and where traces are sampled. Two are about requests: how an incoming trace context is treated, and whether health probes are traced. Eleven are about the GenAI span and metrics of each provider call, and the gateway's own chat metrics.
+Eighteen decisions follow. Four are about the signals: which labels metrics carry, which library records them, how they leave the process, and where traces are sampled. Two are about requests: how an incoming trace context is treated, and whether health probes are traced. Twelve are about the GenAI span and metrics of each provider call, and the gateway's own chat metrics.
 
 Two facts constrain the metric names:
 
@@ -229,6 +229,18 @@ A streamed request can fail after its status 200 was sent. A status code therefo
 
 Chosen: A. The handler records three of them from the same record that writes the request's log line, so the log and the counters agree. The watchdog counter is recorded for each provider call, so after failover it counts each attempt.
 
+## Decision 18: the provider's own timings
+
+Groq reports its queue, prompt, completion and total time in the usage object, in seconds. Ollama reports its load, prompt evaluation, evaluation and total durations, in nanoseconds. OpenAI reports none. The GenAI registry at the pinned commit has no attribute for them; its only time attribute, `gen_ai.response.time_to_first_chunk`, is measured by the client.
+
+| Option | Pros | Cons |
+|---|---|---|
+| A: do not record them | No code. | A slow first chunk looks the same whether the provider queued the request, loaded the model, or read a long prompt. |
+| B: histograms of them, in a later milestone | Percentiles per provider and model on dashboards. | About 510 series for each timing, 2,550 for the five. |
+| C: attributes of the GenAI span, `llm_gateway.provider.*_duration` in seconds | The time to first chunk splits into queue, model load and prefill, at no series cost. The provider measures them inside its own servers, so they are the only speed signal per provider that client backpressure does not change. | No percentiles from metrics: a trace query gives them. Each provider bounds its total differently, so totals do not compare across providers. |
+
+Chosen: C. A timing that the provider does not report has no attribute, because 0 is a real value.
+
 ## Consequences
 
 - Good: the metric series count does not grow with the number of tenants.
@@ -244,6 +256,7 @@ Chosen: A. The handler records three of them from the same record that writes th
 - Good: a stream cut after its status 200 is counted by error type, so a failure that the status code hides stays visible.
 - Bad: there are two times to first token: the conventions' one per provider call, and the gateway's one per request. Dashboards must say which one they show.
 - Bad: a provider's change of model version shows in traces, not in metric labels.
+- Good: a trace shows how much of a slow first chunk was the provider's queue, model load or prefill.
 - Bad: the GenAI conventions are in development. A rename upstream means a code change and a dashboard change, and the pin records which version the code follows.
 
 ## Links

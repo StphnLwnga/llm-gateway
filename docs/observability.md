@@ -36,6 +36,19 @@ The GenAI names follow the OpenTelemetry GenAI semantic conventions at commit [6
 | `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens` | As the provider reports them. The input count is left out when the provider does not report it |
 | `gen_ai.response.time_to_first_chunk` | Seconds, when a chunk arrived |
 | `error.type` | When the call failed; see [error types](#error-types) |
+| `llm_gateway.provider.*_duration` | The provider's own timings, in seconds; see the next table |
+
+The provider's own timings split the time to first chunk into the provider's queue, model load and prefill. The provider measures them inside its own servers, so a slow client does not change them. The GenAI conventions at the pinned commit have no names for them, so they use the `llm_gateway.provider` namespace (decision 18). They are on the span only, never on a metric. A timing that the provider does not report has no attribute, because 0 is a real value. OpenAI reports none.
+
+| Attribute | Groq field (seconds) | Ollama field (nanoseconds) |
+|---|---|---|
+| `llm_gateway.provider.queue_duration` | `queue_time` | Not reported |
+| `llm_gateway.provider.load_duration` | Not reported | `load_duration` |
+| `llm_gateway.provider.prefill_duration` | `prompt_time` | `prompt_eval_duration` |
+| `llm_gateway.provider.decode_duration` | `completion_time` | `eval_duration` |
+| `llm_gateway.provider.total_duration` | `total_time`: prefill and decode, without the queue | `total_duration`: from the request's arrival in Ollama, so it includes the load |
+
+Groq sends the usage in `usage` and in `x_groq.usage` of a streamed answer. The adapter reads `usage`, and `x_groq.usage` when `usage` is absent.
 
 A failed call sets the span status to error, with the error type as its description. The provider's own message stays in the log. A cancelled call leaves the status unset, because the client chose to leave. The span records no prompt, completion or reasoning text, and no events.
 
@@ -127,7 +140,7 @@ Every attribute has a bounded set of values:
 | `gen_ai.token.modality` | `text` and `unknown` |
 | `llm_gateway.*` | The fixed lists in the gateway metrics table |
 
-No metric carries a tenant, a request ID, the response model or a model alias from the request.
+No metric carries a tenant, a request ID, the response model, a provider timing or a model alias from the request.
 
 ## Logs
 
