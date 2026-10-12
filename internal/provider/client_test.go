@@ -74,9 +74,17 @@ func TestHTTPClientTimesOutWaitingForHeaders(t *testing.T) {
 
 func TestHTTPClientReusesConnectionsUnderConcurrency(t *testing.T) {
 	t.Parallel()
-	var dialed atomic.Int64
+	const workers, perWorker = 50, 10
+	var dialed, arrived atomic.Int64
+	allArrived := make(chan struct{})
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		time.Sleep(2 * time.Millisecond) // keeps all workers in flight at once
+		// The warm-up round holds every request until all are in flight, so it
+		// opens exactly one connection per worker.
+		if arrived.Add(1) == workers {
+			close(allArrived)
+		}
+		<-allArrived
+		time.Sleep(2 * time.Millisecond)
 		_, _ = io.WriteString(w, "ok")
 	}))
 	srv.Config.ConnState = func(_ net.Conn, s http.ConnState) {
@@ -87,30 +95,37 @@ func TestHTTPClientReusesConnectionsUnderConcurrency(t *testing.T) {
 	srv.Start()
 	t.Cleanup(srv.Close)
 
-	const workers, perWorker = 50, 10
-	client := NewHTTPClient(time.Second, time.Second)
-	var wg sync.WaitGroup
-	for range workers {
-		wg.Go(func() {
-			for range perWorker {
-				req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
-				if err != nil {
-					t.Error(err)
-					return
+	client := NewHTTPClient(5*time.Second, 5*time.Second)
+	run := func(n int) {
+		var wg sync.WaitGroup
+		for range workers {
+			wg.Go(func() {
+				for range n {
+					req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
+					if err != nil {
+						t.Error(err)
+						return
+					}
+					resp, err := client.Do(req)
+					if err != nil {
+						t.Error(err)
+						return
+					}
+					_, _ = io.Copy(io.Discard, resp.Body)
+					_ = resp.Body.Close()
 				}
-				resp, err := client.Do(req)
-				if err != nil {
-					t.Error(err)
-					return
-				}
-				_, _ = io.Copy(io.Discard, resp.Body)
-				_ = resp.Body.Close()
-			}
-		})
+			})
+		}
+		wg.Wait()
 	}
-	wg.Wait()
 
-	if n := dialed.Load(); n > workers+5 {
-		t.Errorf("%d workers x %d requests opened %d connections, want at most %d", workers, perWorker, n, workers+5)
+	run(1)
+	warm := dialed.Load()
+	run(perWorker)
+
+	// Every worker holds at most one connection, and at least one per worker is
+	// idle after the warm-up, so a kept pool never needs to dial again.
+	if n := dialed.Load() - warm; n > 0 {
+		t.Errorf("%d workers x %d requests after warm-up opened %d new connections, want 0", workers, perWorker, n)
 	}
 }
