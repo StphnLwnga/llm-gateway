@@ -4,7 +4,7 @@ llm-gateway is a multi-tenant, OpenAI-compatible LLM gateway. Each tenant calls 
 
 This document is the target design. Each part is marked:
 
-- **Built (M0)**: in the code now.
+- **Built (Mn)**: in the code now, added in milestone n.
 - **Planned (Mn)**: designed here, built in milestone n.
 
 Decisions are recorded in [docs/adr/](adr/README.md).
@@ -16,19 +16,25 @@ Decisions are recorded in [docs/adr/](adr/README.md).
 | Requirement | Status |
 |---|---|
 | `GET /healthz` (liveness) and `GET /readyz` (readiness) | Built (M0) |
-| `GET /v1/models` in the OpenAI list shape | Built (M0) as a stub. Planned (M1): lists the configured model aliases. |
+| `GET /v1/models` in the OpenAI list shape: the aliases with at least one usable route | Built (M1) |
 | Every error in the OpenAI error envelope ([0002](adr/0002-openai-compatible-api-and-error-envelope.md)) | Built (M0) |
-| `POST /v1/chat/completions`, streamed (SSE) and not streamed | Planned (M1) |
-| Providers: Ollama, Groq, OpenAI ([0005](adr/0005-providers.md)) | Planned (M1) |
+| `POST /v1/chat/completions`, streamed (SSE) and not streamed; a non-streamed request is joined from an upstream stream ([0015](adr/0015-streaming-responses.md)) | Built (M1) |
+| The provider contract: one streaming interface, typed upstream errors, an HTTP client with a first-byte timeout, and a contract suite every adapter runs ([0012](adr/0012-streaming-interface-callback.md)) | Built (M1) |
+| Providers: Groq and OpenAI through one OpenAI-compatible adapter, with platform keys ([0005](adr/0005-providers.md), [0013](adr/0013-provider-credentials.md)) | Built (M1) |
+| Provider: Ollama, on its native chat API, enabled by `OLLAMA_BASE_URL` | Built (M1) |
+| Provider timings in usage: queue, load, prefill and decode, as each provider reports them (Groq: queue, prefill, decode; Ollama: load, prefill, decode). A value the provider does not report stays unset, never 0. A prompt count the provider does not report is marked unknown, never billed as 0. | Built (M1). Planned (M2): TTFT and TPOT metrics from them. |
+| A fake OpenAI-compatible upstream (`fakeprovider`) with deterministic output and fault modes chosen per request in the model name, for tests and load tests | Built (M1) |
 | Provider: Anthropic, and `response_format` across providers with output schema validation | Planned (M5) |
 | Tenants, hashed API keys, encrypted per-tenant provider credentials | Planned (M3) |
-| Routing: model aliases to an ordered provider list, failover before the first content delta, a breaker per endpoint, jittered retries that honour `Retry-After` | Planned (M4) |
+| Routing: model aliases to an ordered provider list, from a routes table served from an in-memory snapshot ([0014](adr/0014-routes-in-postgres.md)) | Built (M1) |
+| Routing resilience: failover before the first content delta, a breaker per endpoint, jittered retries that honour `Retry-After` | Planned (M4) |
 | Rate limits, budget reservation and settlement, the exact cache | Planned (M7) |
 | Usage metering: one usage event per request, a ledger with the price charged | Planned (M6) |
 | Opt-in, redacted request logs, and eval sets built from them | Planned (M6, M9) |
 | Input and output guards: PII redaction, prompt-injection flags (flag only, never block) | Planned (M10) |
 | Semantic cache with a per-tenant filter | Planned (M11) |
 | `gatewayctl`: `migrate up`, `down`, `status` | Built (M0) |
+| `gatewayctl`: `routes add`, `list`, `enable`, `disable` | Built (M1) |
 | `gatewayctl`: tenants, keys, credentials, eval | Planned (M3, M9) |
 
 ### Non-functional
@@ -39,8 +45,8 @@ Decisions are recorded in [docs/adr/](adr/README.md).
 | An in-flight request survives SIGTERM, inside the Kubernetes grace period | `TestInFlightRequestFinishesDuringShutdown`, `TestReadyzIs503DuringTheDrainDelay` | Built (M0) |
 | No secret in logs or error bodies | Redaction tests through the real slog handlers and `encoding/json`; fixed 5xx message | Built (M0) for config and errors |
 | No known vulnerability reachable from the code | `govulncheck` in CI | Built (M0) |
-| The HTTP status is held until the first token; heartbeats keep the stream open; a stall timeout cuts a stream that stops | Contract tests against a fake provider | Planned (M1) |
-| Gateway overhead over the upstream is measured | k6 p50 and p95 against a fake upstream. No target is set before the first measurement. | Planned (M1) |
+| The HTTP status is held for up to `STATUS_HOLD`, then heartbeats keep the stream open; a watchdog cuts a stream with no first event or a stalled one | End-to-end tests through the fake provider's fault modes, the watchdog's own tests, and an OpenAI Python SDK check | Built (M1) |
+| Gateway overhead over the upstream is measured | k6 p50 and p95 against a fake upstream (`make loadtest`). Measured 2026-10-12: 1 to 3 ms p50 added at 5 ms per token and 1 or 10 VUs, about 0.2 to 0.3 ms of the gateway's own cost per request at 0 ms and 1 VU, 0 errors in every case. Results in the README. | Built (M1), measured |
 | No usage is lost and none is counted twice when Kafka is down | Stop Kafka, send 100 requests, restart: 100 ledger rows, 0 duplicates after injected duplicates | Planned (M6) |
 | Tenant A never reaches tenant B's credential, cache entry or request log | Isolation suite that attempts each access and fails if it succeeds | Planned (M3, M11) |
 | Traces, RED metrics, time to first token and time per output token | Recorded-metrics and trace-propagation tests | Planned (M2) |
@@ -79,11 +85,12 @@ What the estimates show:
 
 ## 3. Architecture
 
-Two long-running processes and one admin binary:
+Two long-running processes, one admin binary, and a test server:
 
-- `cmd/gateway`: the request path. **Built (M0)**: health, readiness, the models stub, graceful shutdown, the Postgres pool. The rest is planned.
+- `cmd/gateway`: the request path. **Built (M0)**: health, readiness, the models stub, graceful shutdown, the Postgres pool. **Built (M1)**: the provider registry, with one adapter per provider that has a platform key, and Ollama when `OLLAMA_BASE_URL` is set. The rest is planned.
 - `cmd/worker`: everything off the request path. **Planned (M6)**.
-- `cmd/gatewayctl`: one-shot admin commands. **Built (M0)**: `migrate`.
+- `cmd/gatewayctl`: one-shot admin commands. **Built (M0)**: `migrate`. **Built (M1)**: `routes`.
+- `cmd/fakeprovider`: a fake OpenAI-compatible upstream with per-request fault modes (slow headers, slow first token, slow tokens, stall, drop, malformed chunk, error status), for tests and load tests. **Built (M1)**. It has its own image target, so the production image does not contain it, and Compose starts it only under the `loadtest` profile.
 
 ```mermaid
 flowchart LR
@@ -108,7 +115,7 @@ The nine steps run in `cmd/gateway`, in this order. **Planned (M1 to M11)**; the
 3. Run the input guards (M10).
 4. Look up the exact cache (M7), then the semantic cache (M11).
 5. Route: model alias, then an ordered provider list with a breaker and retries. Failover happens only before the first content delta (M4).
-6. Stream from the provider. Hold the HTTP status until the first token, and send SSE heartbeats meanwhile. A stall timeout cuts a stream that stops sending tokens (M1).
+6. Stream from the provider. Hold the HTTP status for up to `STATUS_HOLD`, then commit 200 and send SSE heartbeats until the first token. A watchdog cuts a stream with no first event or a stalled one. **Built (M1)**, with the first route only; failover in step 5 is M4.
 7. Run the output guards, with a holdback window for streams (M10).
 8. Settle the budget (M7).
 9. Write the usage record and a transactional outbox row in one Postgres transaction (M6).
@@ -154,14 +161,14 @@ reconciler: Postgres ledger ─> Redis spend
 
 ## 4. Data model
 
-**Built (M0):** migration 00001 enables the `vector` extension. **Planned:** the eight tables below.
+**Built (M0):** migration 00001 enables the `vector` extension. **Built (M1):** migration 00002 adds `routes`. **Planned:** the other tables below.
 
 | Table | Holds | Milestone |
 |---|---|---|
 | `tenants` | One row per tenant | M3 |
 | `api_keys` | Key prefix, key hash, `revoked_at`. The full key is never stored. | M3 |
 | `provider_credentials` | Each tenant's provider keys, AES-GCM envelope encrypted (section 6) | M3 |
-| `routes` | Model alias, provider, upstream model, priority, prices, default and maximum `max_tokens` | M4 |
+| `routes` | Model alias, provider, upstream model, priority, enabled, input and output prices per million tokens (`numeric`, never float), default and maximum `max_tokens` | Built (M1) |
 | `budgets` | Spend limits per tenant and period | M7 |
 | `usage_events` | One row per request, `request_id` primary key, with a snapshot of the price charged | M6 |
 | `request_logs` | Opt-in, redacted prompts and responses | M6 |
@@ -191,15 +198,16 @@ What happens when each dependency fails, and what the client sees.
 | Kafka | Down | Nothing on the request path. Outbox rows accumulate in Postgres. The relay publishes them when Kafka returns, and billing is idempotent on `request_id`. | Nothing. | Planned (M6) |
 | Provider | Error or 429 before the first token | Retry with jitter, honouring `Retry-After`, then fail over to the next provider in the route. The breaker opens for an endpoint that keeps failing. A 401 or 403 cools down that credential, not the provider. | A normal response from another provider, or an error status in the OpenAI envelope if every provider fails. | Planned (M4) |
 | Provider | Drops mid-stream | No failover after content has started. Usage is marked truncated. | An error event in the SSE stream. | Planned (M4) |
-| Provider | Stalls mid-stream | The stall timeout cuts the stream. | An error event in the SSE stream. | Planned (M1) |
-| Client | Disconnects | The request context ends, which cancels the upstream call. | Nothing. | Planned (M1) |
+| Provider | Stalls mid-stream | The watchdog's stall deadline cuts the stream. | An error event in the SSE stream, with no `[DONE]`; a real 504 if the status was not sent yet. | Built (M1) |
+| Provider | Many concurrent requests to an HTTP/1.1 upstream (Ollama, a self-hosted vLLM) | Each request needs its own connection. The upstream client keeps up to 256 idle connections per host and 1024 in total, so connections are reused. With Go's default of 2, most requests dialled a new connection: at 100 concurrent streams the gateway's ephemeral ports filled with `TIME_WAIT` sockets within about a minute, and some dials failed with `cannot assign requested address` (measured against the fake provider, 2026-10-12). Groq and OpenAI negotiate HTTP/2 and share one connection. | Normal responses. Without the pool, an occasional `502` before the status is sent. | Built (M1), measured |
+| Client | Disconnects | The request context ends, which cancels the upstream call. It is logged as `client_gone` and never counts against the provider. | Nothing. | Built (M1) |
 
 ## 6. Security
 
 | Area | Design | Status |
 |---|---|---|
 | API keys | Random keys, stored as a prefix and a hash, with `revoked_at`. The hash function (SHA-256 or argon2 for random keys) and the auth cache TTL against revocation speed are decided in M3. | Planned (M3) |
-| Provider credentials | AES-GCM envelope encryption. The associated data is `tenant_id\|provider\|key_version`, so a ciphertext copied to another tenant's row fails to decrypt. The key-encryption key moves to a cloud KMS. | Planned (M3, M12, M13) |
+| Provider credentials | Platform keys come from the environment as `config.Secret` values; a tenant key, when present, wins ([0013](adr/0013-provider-credentials.md)). Tenant keys use AES-GCM envelope encryption. The associated data is `tenant_id\|provider\|key_version`, so a ciphertext copied to another tenant's row fails to decrypt. The key-encryption key moves to a cloud KMS. | Built (M1) for platform keys. Planned (M3, M12, M13) for tenant keys. |
 | Secrets in config | `config.Secret` prints `[redacted]` through `fmt`, `log/slog` and `encoding/json`. `DATABASE_URL` is never logged, and a pgx parse error, which can quote the URL, is replaced with a fixed message. | Built (M0) |
 | Error bodies | A 5xx returns a fixed message; the full error goes to the log. The client message never comes from `err.Error()`. | Built (M0) |
 | Usage and request logs | `usage.v1` carries no prompt content. `requestlog.v1` is opt-in and redacted before it is produced, with the same PII redaction as the guards. | Planned (M6, M10) |
@@ -237,8 +245,8 @@ postgres (healthy) ─> migrate (exit 0) ─> gateway
 
 | Milestone | Scope | Status |
 |---|---|---|
-| 0 | Walking skeleton: config, logging, health and readiness, graceful shutdown, Postgres pool and migrations, image, Compose, CI, this design | In progress |
-| 1 | Streaming core: provider interface, Ollama and OpenAI-compatible adapters, fake provider, status held until the first token, stall timeout | Planned |
+| 0 | Walking skeleton: config, logging, health and readiness, graceful shutdown, Postgres pool and migrations, image, Compose, CI, this design | Built |
+| 1 | Streaming core: provider interface, Ollama and OpenAI-compatible adapters, fake provider, status held until the first token, stall timeout | Built |
 | 2 | Observability | Planned |
 | 3 | Tenancy: tenants, hashed keys, key vault, credentials, database roles | Planned |
 | 4 | Router resilience: aliases, failover, breaker, retries | Planned |

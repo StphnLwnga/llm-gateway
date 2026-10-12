@@ -33,6 +33,8 @@ Chosen: option 1.
 
 The adapter seam is proven when one interface serves both protocols with the same contract tests: cancellation, a callback error, the first-byte timeout, the stall timeout and usage reporting.
 
+Correction (2026-10-11): the stall timeout is not in the adapter contract tests. A watchdog that wraps every adapter enforces the first-token and stall deadlines, with its own tests ([0015](0015-streaming-responses.md)).
+
 ## Consequences
 
 - Good: the router (M4) can fail over between providers on different protocols, so failover is tested across real differences.

@@ -83,3 +83,6 @@ jobs:
 
       - name: Build the image
         run: docker build -f deploy/docker/Dockerfile -t llm-gateway:ci .
+
+      - name: Build the fake provider image
+        run: docker build -f deploy/docker/Dockerfile --target fakeprovider -t llm-gateway-fakeprovider:ci .

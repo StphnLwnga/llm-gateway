@@ -15,19 +15,47 @@ type Checker interface {
 	Check(ctx context.Context) error
 }
 
+// Model is one entry of GET /v1/models.
+type Model struct {
+	ID      string
+	Created time.Time
+}
+
+// ModelLister lists the models the gateway can serve now.
+type ModelLister interface {
+	Models() []Model
+}
+
 const checkTimeout = 2 * time.Second
 
 // Handler serves every gateway route.
 type Handler struct {
 	log      *slog.Logger
+	models   ModelLister
+	resolver Resolver
+	chat     ChatConfig
 	checks   []Checker
 	draining atomic.Bool
 	mux      *http.ServeMux
 }
 
+// Deps are the parts the handler serves from. A nil Models lists nothing,
+// and a nil Routes resolves nothing.
+type Deps struct {
+	Models ModelLister
+	Routes Resolver
+	Chat   ChatConfig
+}
+
 // New returns the gateway's handler; checks run on every GET /readyz.
-func New(log *slog.Logger, checks ...Checker) *Handler {
-	h := &Handler{log: log, checks: checks, mux: http.NewServeMux()}
+func New(log *slog.Logger, deps Deps, checks ...Checker) *Handler {
+	if deps.Chat.MaxBodyBytes == 0 {
+		deps.Chat.MaxBodyBytes = 4 << 20
+	}
+	if deps.Chat.HeartbeatInterval == 0 {
+		deps.Chat.HeartbeatInterval = 10 * time.Second
+	}
+	h := &Handler{log: log, models: deps.Models, resolver: deps.Routes, chat: deps.Chat, checks: checks, mux: http.NewServeMux()}
 	for _, rt := range h.routes() {
 		h.mux.HandleFunc(rt.method+" "+rt.path, rt.handler)
 		// Without this, ServeMux answers a wrong method with a plain-text 405.
@@ -65,7 +93,8 @@ func (h *Handler) routes() []route {
 	return []route{
 		{http.MethodGet, "/healthz", h.healthz},
 		{http.MethodGet, "/readyz", h.readyz},
-		{http.MethodGet, "/v1/models", h.models},
+		{http.MethodGet, "/v1/models", h.listModels},
+		{http.MethodPost, "/v1/chat/completions", h.chatCompletions},
 	}
 }
 
@@ -104,9 +133,14 @@ type model struct {
 	OwnedBy string `json:"owned_by"`
 }
 
-// models is a stub until the router (S1) knows the model aliases.
-func (h *Handler) models(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, modelList{Object: "list", Data: []model{}})
+func (h *Handler) listModels(w http.ResponseWriter, _ *http.Request) {
+	out := modelList{Object: "list", Data: []model{}}
+	if h.models != nil {
+		for _, m := range h.models.Models() {
+			out.Data = append(out.Data, model{ID: m.ID, Object: "model", Created: m.Created.Unix(), OwnedBy: "llm-gateway"})
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (h *Handler) notFound(w http.ResponseWriter, r *http.Request) {

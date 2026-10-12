@@ -22,10 +22,10 @@ import (
 	"github.com/StphnLwnga/llm-gateway/internal/store/postgres"
 )
 
+var discard = slog.New(slog.DiscardHandler)
+
 // postgresImage is the same image as deploy/compose.yaml.
 const postgresImage = "pgvector/pgvector:0.8.7-pg18-trixie"
-
-var discard = slog.New(slog.DiscardHandler)
 
 // startPostgres skips without Docker locally, but fails in CI so the tests never silently stop.
 func startPostgres(t *testing.T) (*tcpostgres.PostgresContainer, config.Secret) {
@@ -90,6 +90,15 @@ func hasVectorExtension(t *testing.T, pool *pgxpool.Pool) bool {
 	return ok
 }
 
+func hasRoutesTable(t *testing.T, pool *pgxpool.Pool) bool {
+	t.Helper()
+	var ok bool
+	if err := pool.QueryRow(t.Context(), "SELECT to_regclass('public.routes') IS NOT NULL").Scan(&ok); err != nil {
+		t.Fatalf("check routes table: %v", err)
+	}
+	return ok
+}
+
 func TestMigrateUpStatusDownUp(t *testing.T) {
 	t.Parallel()
 	_, dsn := startPostgres(t)
@@ -114,17 +123,26 @@ func TestMigrateUpStatusDownUp(t *testing.T) {
 		t.Errorf("status does not report version 1 as applied:\n%s", status.String())
 	}
 
+	if !hasRoutesTable(t, pool) {
+		t.Error("the routes table is missing after migrate up")
+	}
 	if err := postgres.Migrate(ctx, discard, dsn, "down"); err != nil {
 		t.Fatalf("migrate down: %v", err)
 	}
+	if hasRoutesTable(t, pool) || !hasVectorExtension(t, pool) {
+		t.Error("the first migrate down must drop only the routes table")
+	}
+	if err := postgres.Migrate(ctx, discard, dsn, "down"); err != nil {
+		t.Fatalf("second migrate down: %v", err)
+	}
 	if hasVectorExtension(t, pool) {
-		t.Error("the vector extension is still there after migrate down")
+		t.Error("the vector extension is still there after the second migrate down")
 	}
 	if err := postgres.Migrate(ctx, discard, dsn, "up"); err != nil {
 		t.Fatalf("migrate up again: %v", err)
 	}
-	if !hasVectorExtension(t, pool) {
-		t.Error("the vector extension is missing after down then up")
+	if !hasVectorExtension(t, pool) || !hasRoutesTable(t, pool) {
+		t.Error("the vector extension or the routes table is missing after down then up")
 	}
 }
 
@@ -195,7 +213,7 @@ func TestMigrateRejectsAnUnknownCommand(t *testing.T) {
 func TestReadyzFollowsPostgres(t *testing.T) {
 	t.Parallel()
 	ctr, dsn := startPostgres(t)
-	api := httpapi.New(discard, postgres.Pinger{Pool: openPool(t, dsn)})
+	api := httpapi.New(discard, httpapi.Deps{}, postgres.Pinger{Pool: openPool(t, dsn)})
 
 	readyz := func() int {
 		rec := httptest.NewRecorder()

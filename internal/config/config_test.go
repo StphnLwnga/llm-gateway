@@ -49,6 +49,29 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	if cfg.DBMaxConns != 10 {
 		t.Errorf("DBMaxConns = %d, want 10", cfg.DBMaxConns)
 	}
+	if cfg.ProviderConnectTimeout != 5*time.Second {
+		t.Errorf("ProviderConnectTimeout = %v, want 5s", cfg.ProviderConnectTimeout)
+	}
+	if cfg.ProviderFirstByteTimeout != 60*time.Second {
+		t.Errorf("ProviderFirstByteTimeout = %v, want 60s", cfg.ProviderFirstByteTimeout)
+	}
+	if cfg.GroqAPIKey != "" || cfg.OpenAIAPIKey != "" {
+		t.Errorf("provider keys are set by default")
+	}
+	if cfg.ProviderFirstTokenTimeout != 60*time.Second || cfg.StreamStallTimeout != 30*time.Second ||
+		cfg.StatusHold != 3*time.Second || cfg.HeartbeatInterval != 10*time.Second || cfg.RequestMaxBytes != 4<<20 {
+		t.Errorf("streaming defaults = %v, %v, %v, %v, %d", cfg.ProviderFirstTokenTimeout, cfg.StreamStallTimeout,
+			cfg.StatusHold, cfg.HeartbeatInterval, cfg.RequestMaxBytes)
+	}
+	if cfg.RoutesRefreshInterval != 10*time.Second {
+		t.Errorf("RoutesRefreshInterval = %v, want 10s", cfg.RoutesRefreshInterval)
+	}
+	if cfg.OllamaBaseURL != "" {
+		t.Errorf("OllamaBaseURL = %q by default, want empty (Ollama disabled)", cfg.OllamaBaseURL)
+	}
+	if cfg.GroqBaseURL != "https://api.groq.com/openai/v1" || cfg.OpenAIBaseURL != "https://api.openai.com/v1" {
+		t.Errorf("GroqBaseURL, OpenAIBaseURL = %q, %q; want the public endpoints", cfg.GroqBaseURL, cfg.OpenAIBaseURL)
+	}
 	if string(cfg.DatabaseURL) != testDSN {
 		t.Errorf("DatabaseURL was not read")
 	}
@@ -135,6 +158,42 @@ func TestLoadParsesDurations(t *testing.T) {
 	}
 }
 
+func TestLoadParsesProviderTimeouts(t *testing.T) {
+	t.Parallel()
+	cfg, err := Load(env(map[string]string{"PROVIDER_CONNECT_TIMEOUT": "2s", "PROVIDER_FIRST_BYTE_TIMEOUT": "1m30s"}))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.ProviderConnectTimeout != 2*time.Second || cfg.ProviderFirstByteTimeout != 90*time.Second {
+		t.Errorf("ProviderConnectTimeout, ProviderFirstByteTimeout = %v, %v; want 2s, 1m30s",
+			cfg.ProviderConnectTimeout, cfg.ProviderFirstByteTimeout)
+	}
+}
+
+func TestLoadReadsProviderKeysAndBaseURLs(t *testing.T) {
+	t.Parallel()
+	cfg, err := Load(env(map[string]string{
+		"GROQ_API_KEY": "gsk_test", "OPENAI_API_KEY": "sk-test",
+		"GROQ_BASE_URL": "http://fakeprovider:8081/v1", "OPENAI_BASE_URL": "https://proxy.example/v1",
+		"OLLAMA_BASE_URL": "http://host.docker.internal:11434",
+	}))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.GroqAPIKey != "gsk_test" || cfg.OpenAIAPIKey != "sk-test" {
+		t.Error("provider keys were not read")
+	}
+	if cfg.OllamaBaseURL != "http://host.docker.internal:11434" {
+		t.Errorf("OllamaBaseURL = %q", cfg.OllamaBaseURL)
+	}
+	if cfg.GroqBaseURL != "http://fakeprovider:8081/v1" || cfg.OpenAIBaseURL != "https://proxy.example/v1" {
+		t.Errorf("GroqBaseURL, OpenAIBaseURL = %q, %q", cfg.GroqBaseURL, cfg.OpenAIBaseURL)
+	}
+	if out := fmt.Sprintf("%+v", cfg); strings.Contains(out, "gsk_test") || strings.Contains(out, "sk-test") {
+		t.Errorf("%%+v of Config printed a provider key: %s", out)
+	}
+}
+
 func TestLoadRejectsInvalidSettings(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -156,6 +215,24 @@ func TestLoadRejectsInvalidSettings(t *testing.T) {
 		{"drain delay set but empty", map[string]string{"DRAIN_DELAY": ""}, "DRAIN_DELAY"},
 		{"shutdown timeout not a duration", map[string]string{"SHUTDOWN_TIMEOUT": "soon"}, "SHUTDOWN_TIMEOUT"},
 		{"shutdown timeout negative", map[string]string{"SHUTDOWN_TIMEOUT": "-20s"}, "SHUTDOWN_TIMEOUT"},
+		{"connect timeout zero", map[string]string{"PROVIDER_CONNECT_TIMEOUT": "0s"}, "PROVIDER_CONNECT_TIMEOUT"},
+		{"connect timeout negative", map[string]string{"PROVIDER_CONNECT_TIMEOUT": "-5s"}, "PROVIDER_CONNECT_TIMEOUT"},
+		{"connect timeout without a unit", map[string]string{"PROVIDER_CONNECT_TIMEOUT": "5"}, "PROVIDER_CONNECT_TIMEOUT"},
+		{"first byte timeout zero", map[string]string{"PROVIDER_FIRST_BYTE_TIMEOUT": "0s"}, "PROVIDER_FIRST_BYTE_TIMEOUT"},
+		{"first byte timeout set but empty", map[string]string{"PROVIDER_FIRST_BYTE_TIMEOUT": ""}, "PROVIDER_FIRST_BYTE_TIMEOUT"},
+		{"groq base url without a scheme", map[string]string{"GROQ_BASE_URL": "api.groq.com/openai/v1"}, "GROQ_BASE_URL"},
+		{"openai base url with another scheme", map[string]string{"OPENAI_BASE_URL": "ftp://api.openai.com/v1"}, "OPENAI_BASE_URL"},
+		{"first token timeout zero", map[string]string{"PROVIDER_FIRST_TOKEN_TIMEOUT": "0s"}, "PROVIDER_FIRST_TOKEN_TIMEOUT"},
+		{"stall timeout zero", map[string]string{"STREAM_STALL_TIMEOUT": "0s"}, "STREAM_STALL_TIMEOUT"},
+		{"status hold negative", map[string]string{"STATUS_HOLD": "-1s"}, "STATUS_HOLD"},
+		{"heartbeat zero", map[string]string{"HEARTBEAT_INTERVAL": "0s"}, "HEARTBEAT_INTERVAL"},
+		{"request max bytes too small", map[string]string{"REQUEST_MAX_BYTES": "100"}, "REQUEST_MAX_BYTES"},
+		{"request max bytes not a number", map[string]string{"REQUEST_MAX_BYTES": "4MiB"}, "REQUEST_MAX_BYTES"},
+		{"routes refresh interval zero", map[string]string{"ROUTES_REFRESH_INTERVAL": "0s"}, "ROUTES_REFRESH_INTERVAL"},
+		{"routes refresh interval not a duration", map[string]string{"ROUTES_REFRESH_INTERVAL": "often"}, "ROUTES_REFRESH_INTERVAL"},
+		{"ollama base url set but empty", map[string]string{"OLLAMA_BASE_URL": ""}, "OLLAMA_BASE_URL"},
+		{"ollama base url without a scheme", map[string]string{"OLLAMA_BASE_URL": "localhost:11434"}, "OLLAMA_BASE_URL"},
+		{"openai base url set but empty", map[string]string{"OPENAI_BASE_URL": ""}, "OPENAI_BASE_URL"},
 		{"database url set but empty", map[string]string{"DATABASE_URL": ""}, "DATABASE_URL"},
 		{"max conns zero", map[string]string{"DB_MAX_CONNS": "0"}, "DB_MAX_CONNS"},
 		{"max conns negative", map[string]string{"DB_MAX_CONNS": "-3"}, "DB_MAX_CONNS"},

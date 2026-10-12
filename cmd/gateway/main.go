@@ -6,13 +6,17 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net"
 	"os"
 	"os/signal"
+	"slices"
 	"syscall"
 
 	"github.com/StphnLwnga/llm-gateway/internal/config"
 	"github.com/StphnLwnga/llm-gateway/internal/httpapi"
+	"github.com/StphnLwnga/llm-gateway/internal/provider"
+	"github.com/StphnLwnga/llm-gateway/internal/router"
 	"github.com/StphnLwnga/llm-gateway/internal/store/postgres"
 	"github.com/StphnLwnga/llm-gateway/internal/telemetry"
 )
@@ -43,7 +47,22 @@ func run(ctx context.Context, getenv func(string) (string, bool), stdout io.Writ
 		"drain_delay", cfg.DrainDelay.String(),
 		"shutdown_timeout", cfg.ShutdownTimeout.String(),
 		"db_max_conns", cfg.DBMaxConns,
+		"provider_connect_timeout", cfg.ProviderConnectTimeout.String(),
+		"provider_first_byte_timeout", cfg.ProviderFirstByteTimeout.String(),
+		"routes_refresh_interval", cfg.RoutesRefreshInterval.String(),
+		"provider_first_token_timeout", cfg.ProviderFirstTokenTimeout.String(),
+		"stream_stall_timeout", cfg.StreamStallTimeout.String(),
+		"status_hold", cfg.StatusHold.String(),
+		"heartbeat_interval", cfg.HeartbeatInterval.String(),
+		"request_max_bytes", cfg.RequestMaxBytes,
 	)
+
+	client := provider.NewHTTPClient(cfg.ProviderConnectTimeout, cfg.ProviderFirstByteTimeout)
+	registry := providers(ctx, cfg, client, log)
+	for name, p := range registry {
+		registry[name] = &provider.Watchdog{Name: name, Inner: p, FirstEvent: cfg.ProviderFirstTokenTimeout, Stall: cfg.StreamStallTimeout}
+	}
+	log.InfoContext(ctx, "providers ready", "names", slices.Sorted(maps.Keys(registry)))
 
 	pool, err := postgres.Open(ctx, cfg.DatabaseURL, cfg.DBMaxConns)
 	if err != nil {
@@ -51,7 +70,19 @@ func run(ctx context.Context, getenv func(string) (string, bool), stdout io.Writ
 	}
 	defer pool.Close()
 
-	api := httpapi.New(log, postgres.Pinger{Pool: pool})
+	routes := router.New(postgres.Routes{Pool: pool}, registry, cfg.RoutesRefreshInterval, log)
+	refreshed := make(chan struct{})
+	go func() {
+		defer close(refreshed)
+		routes.Run(ctx)
+	}()
+	defer func() { <-refreshed }() // runs before pool.Close, so no refresh is left using the pool
+
+	api := httpapi.New(log, httpapi.Deps{
+		Models: routing{routes},
+		Routes: routing{routes},
+		Chat:   httpapi.ChatConfig{StatusHold: cfg.StatusHold, HeartbeatInterval: cfg.HeartbeatInterval, MaxBodyBytes: cfg.RequestMaxBytes},
+	}, postgres.Pinger{Pool: pool}, routes)
 	srv := httpapi.NewServer(cfg.Addr(), api)
 	srv.ErrorLog = slog.NewLogLogger(log.Handler(), slog.LevelWarn)
 

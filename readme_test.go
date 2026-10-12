@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/StphnLwnga/llm-gateway/internal/config"
+	"github.com/StphnLwnga/llm-gateway/internal/fakeupstream"
 	"github.com/StphnLwnga/llm-gateway/internal/httpapi"
 )
 
@@ -52,7 +53,7 @@ func TestREADMEDocumentsEverySetting(t *testing.T) {
 }
 
 func TestREADMEDocumentsEveryRoute(t *testing.T) {
-	routes := httpapi.New(slog.New(slog.DiscardHandler)).Routes()
+	routes := httpapi.New(slog.New(slog.DiscardHandler), httpapi.Deps{}).Routes()
 	if len(routes) == 0 {
 		t.Fatal("httpapi registered no routes")
 	}
@@ -60,6 +61,15 @@ func TestREADMEDocumentsEveryRoute(t *testing.T) {
 	for _, r := range routes {
 		if !hasLinePrefix(lines, "| `"+r+"` |") {
 			t.Errorf("README.md has no endpoint row for %s", r)
+		}
+	}
+}
+
+func TestREADMEDocumentsEveryFakeDirective(t *testing.T) {
+	lines := readmeLines(t)
+	for _, d := range fakeupstream.Directives() {
+		if !hasLinePrefix(lines, "| `"+d+"` |") {
+			t.Errorf("README.md has no fault mode row for %s", d)
 		}
 	}
 }

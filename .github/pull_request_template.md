@@ -1,6 +1,8 @@
-## What changed and why
+## Summary
 
-## How it was tested
+## Test plan
+
+- [ ]
 
 ## Docs
 

@@ -1,0 +1,16 @@
+: constructed from the Groq API reference (XGroq schema: usage only in the final chunk), not recorded
+
+data: {"id":"chatcmpl-normalized","object":"chat.completion.chunk","created":0,"model":"groq-model","system_fingerprint":"fp_179b0f92c9","choices":[{"index":0,"delta":{"role":"assistant","content":""},"logprobs":null,"finish_reason":null}],"x_groq":{"id":"req_normalized"}}
+
+data: {"id":"chatcmpl-normalized","object":"chat.completion.chunk","created":0,"model":"groq-model","system_fingerprint":"fp_179b0f92c9","choices":[{"index":0,"delta":{"content":"Low"},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-normalized","object":"chat.completion.chunk","created":0,"model":"groq-model","system_fingerprint":"fp_179b0f92c9","choices":[{"index":0,"delta":{"content":" latency"},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-normalized","object":"chat.completion.chunk","created":0,"model":"groq-model","system_fingerprint":"fp_179b0f92c9","choices":[{"index":0,"delta":{"content":" matters"},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-normalized","object":"chat.completion.chunk","created":0,"model":"groq-model","system_fingerprint":"fp_179b0f92c9","choices":[{"index":0,"delta":{"content":"."},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-normalized","object":"chat.completion.chunk","created":0,"model":"groq-model","system_fingerprint":"fp_179b0f92c9","choices":[{"index":0,"delta":{},"logprobs":null,"finish_reason":"stop"}],"x_groq":{"id":"req_normalized","usage":{"queue_time":0.01,"prompt_tokens":18,"prompt_time":0.000680594,"completion_tokens":4,"completion_time":0.0033,"total_tokens":22,"total_time":0.004}}}
+
+data: [DONE]
+
