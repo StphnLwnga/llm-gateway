@@ -240,7 +240,7 @@ Reading the results:
 - **0 ms, 10 and 100 VUs.** Both paths are CPU-bound. k6, the gateway and the fake share the 10 CPUs of the Docker VM, and the gateway and the fake each peaked at about 4 cores. So the added latency at 100 VUs is mostly queueing for CPU. It is not the cost per request, and it is not a capacity figure. Little's law agrees with the closed loop: 6,939.7 req/s x 12.51 ms is about 87 requests in flight, against 100 VUs.
 - **Stream against non-stream.** A stream costs the gateway about twice as much as a non-streamed answer: 6,940 against 13,448 req/s at 100 VUs. Both read 20 upstream events. A stream also writes and flushes 20 events to the client, but a non-streamed answer writes one JSON body.
 - **Stream at 10 VUs.** The added p95 was higher than at the other levels, in a trial run (10.73 ms) and in this run (8.14 ms). The cause is not known yet. A trace per stage of the request (M2, observability) can show it.
-- **TW peak 3 and 12.** At 0 ms and 100 VUs, a few gateway sockets to the fake were in `TIME_WAIT`. The probable cause, not confirmed, is the connections closed when k6 cancels the requests in flight at the end of each scenario. The count stays far below the ephemeral port range.
+- **TW peak 3 and 12.** A few upstream connections closed at 0 ms and 100 VUs. The cause is not yet identified. The count is far below the ephemeral port range.
 
 ## CI
 
