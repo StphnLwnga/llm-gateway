@@ -246,7 +246,7 @@ postgres (healthy) ─> migrate (exit 0) ─> gateway
 | Milestone | Scope | Status |
 |---|---|---|
 | 0 | Walking skeleton: config, logging, health and readiness, graceful shutdown, Postgres pool and migrations, image, Compose, CI, this design | Built |
-| 1 | Streaming core: provider interface, Ollama and OpenAI-compatible adapters, fake provider, status held until the first token, stall timeout | In progress |
+| 1 | Streaming core: provider interface, Ollama and OpenAI-compatible adapters, fake provider, status held until the first token, stall timeout | Built |
 | 2 | Observability | Planned |
 | 3 | Tenancy: tenants, hashed keys, key vault, credentials, database roles | Planned |
 | 4 | Router resilience: aliases, failover, breaker, retries | Planned |

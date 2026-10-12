@@ -2,7 +2,7 @@
 
 A multi-tenant, OpenAI-compatible LLM gateway in Go: each tenant calls one API with its own key, and the gateway routes the request to Ollama, Groq, OpenAI or Anthropic with rate limits, budgets, usage metering and tracing.
 
-Status: Milestone 0 (walking skeleton) is built. Milestone 1 (streaming core) is in progress.
+Status: Milestone 0 (walking skeleton) and milestone 1 (streaming core) are built.
 
 ## Design
 
@@ -194,7 +194,7 @@ The cases are 2 token delays (5 ms, 0 ms) x 2 paths (direct, gateway) x 2 modes 
 
 Method:
 
-- **Fake settings.** Every case asks for 20 tokens with no extra delay before the first token. The 5 ms table uses `fake?tokens=20&tpot=5ms`, which is closer to a real model: the fake alone took about 110 ms per answer in a trial run (19 gaps of 5 ms, plus the timer overshoot of each sleep), so the overhead is small next to it. The 0 ms table uses `fake?tokens=20&tpot=0ms`, so the fake answers at once and the gateway's own cost is most of the time. `TPOTS` (default `"5ms 0ms"`), `TOKENS` and `VUS_LEVELS` change them.
+- **Fake settings.** Every case asks for 20 tokens with no extra delay before the first token. The 5 ms table uses `fake?tokens=20&tpot=5ms`, which is closer to a real model: the fake alone takes about 107 to 110 ms per answer (the direct p50 column: 19 gaps of 5 ms, plus the timer overshoot of each sleep), so the overhead is small next to it. The 0 ms table uses `fake?tokens=20&tpot=0ms`, so the fake answers at once and the gateway's own cost is most of the time. `TPOTS` (default `"5ms 0ms"`), `TOKENS` and `VUS_LEVELS` change them.
 - **Load model.** Closed loop: each virtual user sends its next request when the previous one ends, with no think time. At 100 users, the request rate depends on the latency.
 - **Warm-up.** Each case runs 10 s of warm-up, which is not recorded, then 30 s of measurement at the same load. `WARMUP_S` and `DURATION_S` change them.
 - **The number.** The latency is k6's `http_req_duration` for the full response: from the request sent to the last byte read. k6 reads the whole body. It does not see the SSE events one by one.
@@ -239,7 +239,7 @@ Reading the results:
 - **0 ms, 1 VU.** The gateway's own cost is about 0.2 to 0.3 ms p50 per request.
 - **0 ms, 10 and 100 VUs.** Both paths are CPU-bound. k6, the gateway and the fake share the 10 CPUs of the Docker VM, and the gateway and the fake each peaked at about 4 cores. So the added latency at 100 VUs is mostly queueing for CPU. It is not the cost per request, and it is not a capacity figure. Little's law agrees with the closed loop: 6,939.7 req/s x 12.51 ms is about 87 requests in flight, against 100 VUs.
 - **Stream against non-stream.** A stream costs the gateway about twice as much as a non-streamed answer: 6,940 against 13,448 req/s at 100 VUs. Both read 20 upstream events. A stream also writes and flushes 20 events to the client, but a non-streamed answer writes one JSON body.
-- **Stream at 10 VUs.** The added p95 was higher than at the other levels, in a trial run (10.73 ms) and in this run (8.14 ms). The cause is not known yet. A trace per stage of the request (M2, observability) can show it.
+- **Stream at 10 VUs.** The added p95 was higher than at the other levels in two separate runs (10.73 ms and 8.14 ms). The cause is not known yet. A trace per stage of the request (M2, observability) can show it.
 - **TW peak 3 and 12.** A few upstream connections closed at 0 ms and 100 VUs. The cause is not yet identified. The count is far below the ephemeral port range.
 
 ## CI
