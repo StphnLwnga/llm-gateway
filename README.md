@@ -42,7 +42,8 @@ The gateway takes the OpenAI request shape, so an OpenAI SDK needs only a new ba
 │   ├── sse/                 the Server-Sent Events writer and heartbeats
 │   ├── store/
 │   │   └── postgres/        the connection pool, readiness check, migrations, routes table
-│   └── telemetry/           the structured logger
+│   └── telemetry/           the structured logger, with trace IDs
+│       └── otelsdk/         OpenTelemetry tracer and meter providers, exported over OTLP/HTTP
 ├── deploy/
 │   ├── docker/
 │   │   └── Dockerfile       distroless, non-root images for the gateway and the fake provider
