@@ -38,6 +38,7 @@ type Handler struct {
 	draining atomic.Bool
 	mux      *http.ServeMux
 	handler  http.Handler
+	metrics  chatMetrics
 }
 
 // Deps are the parts the handler serves from. A nil Models lists nothing,
@@ -65,6 +66,10 @@ func New(log *slog.Logger, deps Deps, checks ...Checker) *Handler {
 	}
 	h.mux.HandleFunc("/", h.notFound)
 	h.handler = instrument(h.mux, deps.Telemetry)
+	var err error
+	if h.metrics, err = newChatMetrics(deps.Telemetry.Meter); err != nil {
+		log.Warn("chat metrics are incomplete", "err", err)
+	}
 	return h
 }
 

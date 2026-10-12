@@ -54,14 +54,19 @@ type chatLog struct {
 	usage         *provider.Usage
 	truncated     bool
 	errKind       string
+	errType       string // error.type of a cut stream
 	clientGone    bool
+	firstVisible  time.Duration // to the first content written to the client; streams only
 }
 
 func (h *Handler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	rec := &chatLog{requestID: "req_" + randomHex(12)}
 	w.Header().Set("X-Request-Id", rec.requestID)
-	defer h.logChat(r.Context(), rec, start)
+	defer func() {
+		h.recordChat(r.Context(), rec)
+		h.logChat(r.Context(), rec, start)
+	}()
 
 	r.Body = http.MaxBytesReader(w, r.Body, h.chat.MaxBodyBytes)
 	var in chatRequest
@@ -180,6 +185,9 @@ func (h *Handler) stream(w http.ResponseWriter, r *http.Request, t Target, preq 
 				stop()
 				return
 			}
+			if e.Delta != "" && rec.firstVisible == 0 {
+				rec.firstVisible = time.Since(start)
+			}
 		case err := <-done:
 			if err != nil {
 				if r.Context().Err() != nil {
@@ -238,7 +246,7 @@ func (h *Handler) streamError(ctx context.Context, w http.ResponseWriter, out *s
 		writeAPIError(w, status, body)
 		return
 	}
-	rec.truncated = true
+	rec.truncated, rec.errType = true, provider.ErrorType(err)
 	if werr := out.Event(errorEnvelope{Error: body}); werr != nil {
 		rec.clientGone = true
 	}
