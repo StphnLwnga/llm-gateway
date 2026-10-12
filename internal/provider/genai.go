@@ -37,6 +37,14 @@ const (
 	attrModality         = "gen_ai.token.modality"
 	attrDeadline         = "llm_gateway.deadline"
 
+	// The provider's own timings, in seconds. The GenAI registry has no names
+	// for them. They go on the span only, so they add no series.
+	attrQueueDuration   = "llm_gateway.provider.queue_duration"
+	attrLoadDuration    = "llm_gateway.provider.load_duration"
+	attrPrefillDuration = "llm_gateway.provider.prefill_duration"
+	attrDecodeDuration  = "llm_gateway.provider.decode_duration"
+	attrTotalDuration   = "llm_gateway.provider.total_duration"
+
 	// ErrorTypeCancelled is the error.type of a call whose caller gave up.
 	ErrorTypeCancelled = "cancelled"
 
@@ -234,6 +242,9 @@ func (c *call) end(caller context.Context, err error) {
 		if !c.usage.PromptTokensUnknown {
 			c.span.SetAttributes(attribute.Int(attrUsageIn, c.usage.PromptTokens))
 		}
+		if t := c.usage.Timings; t != nil {
+			c.span.SetAttributes(timingAttrs(t)...)
+		}
 	}
 	durationAttrs := c.attrs
 	if errType != "" {
@@ -266,6 +277,27 @@ func (c *call) recordUsage() {
 		c.g.inputTokens.Add(c.ctx, int64(in), set)
 	}
 	c.g.outputTokens.Add(c.ctx, int64(out), set)
+}
+
+// timingAttrs leaves out a timing the provider did not report, because 0 is a
+// real value.
+func timingAttrs(t *Timings) []attribute.KeyValue {
+	var out []attribute.KeyValue
+	for _, f := range []struct {
+		key string
+		d   *time.Duration
+	}{
+		{attrQueueDuration, t.Queue},
+		{attrLoadDuration, t.Load},
+		{attrPrefillDuration, t.Prefill},
+		{attrDecodeDuration, t.Decode},
+		{attrTotalDuration, t.Total},
+	} {
+		if f.d != nil {
+			out = append(out, attribute.Float64(f.key, f.d.Seconds()))
+		}
+	}
+	return out
 }
 
 // truncate cuts s to at most n bytes without splitting a character.

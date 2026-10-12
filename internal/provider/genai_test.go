@@ -511,3 +511,54 @@ func TestServerAttributesComeFromTheBaseURL(t *testing.T) {
 		}
 	}
 }
+
+func TestProviderTimingsAreSpanAttributesOnly(t *testing.T) {
+	t.Parallel()
+	d := func(n time.Duration) *time.Duration { return &n }
+	keys := []string{
+		"llm_gateway.provider.queue_duration", "llm_gateway.provider.load_duration", "llm_gateway.provider.prefill_duration",
+		"llm_gateway.provider.decode_duration", "llm_gateway.provider.total_duration",
+	}
+	for _, tc := range []struct {
+		name    string
+		timings *Timings
+		want    map[string]time.Duration // a key not here must be absent
+	}{
+		{"groq reports no load", &Timings{Queue: d(83291930), Prefill: d(1039105), Decode: d(7396903), Total: d(8436008)},
+			map[string]time.Duration{keys[0]: 83291930, keys[2]: 1039105, keys[3]: 7396903, keys[4]: 8436008}},
+		{"ollama reports no queue, and a reported 0 is kept", &Timings{Load: d(0), Prefill: d(131822000), Decode: d(116869000), Total: d(346482167)},
+			map[string]time.Duration{keys[1]: 0, keys[2]: 131822000, keys[3]: 116869000, keys[4]: 346482167}},
+		{"openai reports none", nil, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			r := observe(t, steps{{event: Event{Delta: "a", Usage: &Usage{PromptTokens: 1, CompletionTokens: 1, Timings: tc.timings}}}})
+			if err := r.g.Stream(t.Context(), chatReq, drain); err != nil {
+				t.Fatal(err)
+			}
+			got := map[string]float64{}
+			for _, kv := range r.only(t, spanName).Attributes() {
+				if strings.HasPrefix(string(kv.Key), "llm_gateway.provider.") {
+					got[string(kv.Key)] = kv.Value.AsFloat64()
+				}
+			}
+			if len(got) != len(tc.want) {
+				t.Errorf("timing attributes = %v, want %v", got, tc.want)
+			}
+			for k, w := range tc.want {
+				if v, ok := got[k]; !ok || v != w.Seconds() {
+					t.Errorf("%s = %v (set %v), want %v seconds", k, v, ok, w.Seconds())
+				}
+			}
+			for name, m := range r.metrics(t) {
+				for _, set := range pointAttrs(m) {
+					for _, k := range keys {
+						if set.HasValue(attribute.Key(k)) {
+							t.Errorf("%s carries %s; a timing goes on the span only", name, k)
+						}
+					}
+				}
+			}
+		})
+	}
+}
