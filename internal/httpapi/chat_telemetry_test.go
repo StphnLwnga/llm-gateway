@@ -3,8 +3,11 @@ package httpapi_test
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
+	"maps"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -142,5 +145,42 @@ func TestAnUnsampledClientTraceIsRecordedAndContinuedUpstream(t *testing.T) {
 	parts := strings.Split(got, "-")
 	if len(parts) != 4 || parts[1] != clientTraceID || parts[3] != "01" {
 		t.Errorf("upstream traceparent = %q, want trace ID %s and sampled flag 01", got, clientTraceID)
+	}
+}
+
+func TestTheGenAISpanSitsBetweenTheServerAndHTTPClientSpans(t *testing.T) {
+	t.Parallel()
+	spans := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spans))
+	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
+
+	client := provider.Instrument(provider.NewHTTPClient(time.Second, 5*time.Second), tp, nil, propagation.TraceContext{})
+	upstream := serve(t, fakeupstream.New())
+	p, err := provider.NewGenAI(openaicompat.New("fake", upstream+"/v1", "test-key", client), "fake", upstream, tp, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := httpapi.New(slog.New(slog.DiscardHandler), httpapi.Deps{
+		Routes:    resolver{"chat": {{ProviderName: "fake", Provider: p, UpstreamModel: "fake"}}},
+		Chat:      httpapi.ChatConfig{StatusHold: time.Second, HeartbeatInterval: time.Second, MaxBodyBytes: 4 << 10},
+		Telemetry: httpapi.Telemetry{Tracer: tp},
+	})
+	resp := post(t.Context(), t, gateway{url: serve(t, h)}, body(true, ""))
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
+
+	byName := map[string]sdktrace.ReadOnlySpan{}
+	for _, s := range spans.Ended() {
+		byName[s.Name()] = s
+	}
+	server, genai, httpClient := byName["POST /v1/chat/completions"], byName["chat fake"], byName["HTTP POST"]
+	if server == nil || genai == nil || httpClient == nil {
+		t.Fatalf("spans = %v, want the server, GenAI and HTTP client spans", slices.Collect(maps.Keys(byName)))
+	}
+	if genai.SpanKind() != trace.SpanKindClient || genai.Parent().SpanID() != server.SpanContext().SpanID() {
+		t.Errorf("GenAI span kind %v, parent %v; want client under the server span %v", genai.SpanKind(), genai.Parent().SpanID(), server.SpanContext().SpanID())
+	}
+	if httpClient.Parent().SpanID() != genai.SpanContext().SpanID() {
+		t.Errorf("HTTP client span parent = %v, want the GenAI span %v", httpClient.Parent().SpanID(), genai.SpanContext().SpanID())
 	}
 }

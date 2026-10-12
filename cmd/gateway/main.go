@@ -81,9 +81,9 @@ func run(ctx context.Context, getenv func(string) (string, bool), stdout io.Writ
 
 	client := provider.Instrument(provider.NewHTTPClient(cfg.ProviderConnectTimeout, cfg.ProviderFirstByteTimeout),
 		tel.Tracer, tel.Meter, prop)
-	registry := providers(ctx, cfg, client, log)
-	for name, p := range registry {
-		registry[name] = &provider.Watchdog{Name: name, Inner: p, FirstEvent: cfg.ProviderFirstTokenTimeout, Stall: cfg.StreamStallTimeout}
+	registry, err := providers(ctx, cfg, client, tel.Tracer, tel.Meter, log)
+	if err != nil {
+		return fmt.Errorf("provider telemetry: %w", err)
 	}
 	log.InfoContext(ctx, "providers ready", "names", slices.Sorted(maps.Keys(registry)))
 
