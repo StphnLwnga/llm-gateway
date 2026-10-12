@@ -1,4 +1,6 @@
 COMPOSE := docker compose -f deploy/compose.yaml
+# The image build stamps this into the gateway as service.version.
+export VERSION ?= $(shell git describe --always --dirty 2>/dev/null || echo dev)
 
 .PHONY: build test up down logs migrate-status loadtest loadtest-down
 
