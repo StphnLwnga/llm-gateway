@@ -54,6 +54,7 @@ The gateway takes the OpenAI request shape, so an OpenAI SDK needs only a new ba
 │   ├── adr/                 architecture decision records
 │   ├── api.md               endpoints, errors, chat completions, routes
 │   ├── configuration.md     every setting
+│   ├── observability.md     traces, metrics and log correlation
 │   ├── fake-provider.md     the fake provider and its fault modes
 │   ├── benchmarks.md        the overhead test: method and full results
 │   └── development.md       running locally, shutdown, CI
@@ -124,4 +125,4 @@ make loadtest-down   # remove the overhead test stack and its volume
 
 CI runs lint, the race-enabled tests, a vulnerability scan and an image build on every pull request and every push to main.
 
-Reference: [configuration](docs/configuration.md), [API and routes](docs/api.md), [fake provider](docs/fake-provider.md), [benchmarks](docs/benchmarks.md), [development and CI](docs/development.md).
+Reference: [configuration](docs/configuration.md), [API and routes](docs/api.md), [observability](docs/observability.md), [fake provider](docs/fake-provider.md), [benchmarks](docs/benchmarks.md), [development and CI](docs/development.md).

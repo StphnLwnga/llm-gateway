@@ -7,7 +7,7 @@ This document is the target design. Each part is marked:
 - **Built (Mn)**: in the code now, added in milestone n.
 - **Planned (Mn)**: designed here, built in milestone n.
 
-Decisions are recorded in [docs/adr/](adr/README.md). Reference pages: [API](api.md), [configuration](configuration.md), [fake provider](fake-provider.md), [benchmarks](benchmarks.md) and [development](development.md).
+Decisions are recorded in [docs/adr/](adr/README.md). Reference pages: [API](api.md), [configuration](configuration.md), [observability](observability.md), [fake provider](fake-provider.md), [benchmarks](benchmarks.md) and [development](development.md).
 
 ## 1. Requirements
 
@@ -50,7 +50,8 @@ Decisions are recorded in [docs/adr/](adr/README.md). Reference pages: [API](api
 | No usage is lost and none is counted twice when Kafka is down | Stop Kafka, send 100 requests, restart: 100 ledger rows, 0 duplicates after injected duplicates | Planned (M6) |
 | Tenant A never reaches tenant B's credential, cache entry or request log | Isolation suite that attempts each access and fails if it succeeds | Planned (M3, M11) |
 | Telemetry setup: OpenTelemetry tracer and meter providers exported over OTLP/HTTP, no-op when no endpoint is set, flushed after the HTTP server stops and inside the shutdown budget; log lines in a span carry its trace and span IDs ([0016](adr/0016-observability.md)) | Tests against a fake OTLP/HTTP server (no export without an endpoint, every span and metric exported on shutdown), an in-memory exporter (resource, sampler), and the JSON log output | Built (M2) |
-| Traces, RED metrics, time to first token and time per output token | Recorded-metrics and trace-propagation tests | Planned (M2) |
+| HTTP server spans and RED metrics (`http.server.request.duration`) with the route template, never the raw path, and a fixed `server.address`; request log lines carry the server span's trace ID | Tests with an in-memory span recorder and metric reader: span names and `http.route`, 5xx marked as an error, bounded metric attributes under a hostile `Host` header, write deadlines and flush through the instrumentation | Built (M2) |
+| Trace context propagation in from clients and out to providers; GenAI time to first token, time per output chunk and token metrics | Trace-propagation and recorded-metrics tests | Planned (M2) |
 | The same manifests run on kind, EKS and GKE Autopilot | Kustomize base with an overlay per target ([0006](adr/0006-deploy-targets.md)) | Planned (M8, M12, M13) |
 
 ## 2. Back-of-envelope estimates

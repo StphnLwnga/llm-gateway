@@ -100,6 +100,11 @@ func run(ctx context.Context, getenv func(string) (string, bool), stdout io.Writ
 		Models: routing{routes},
 		Routes: routing{routes},
 		Chat:   httpapi.ChatConfig{StatusHold: cfg.StatusHold, HeartbeatInterval: cfg.HeartbeatInterval, MaxBodyBytes: cfg.RequestMaxBytes},
+		Telemetry: httpapi.Telemetry{
+			Tracer:     tel.Tracer,
+			Meter:      tel.Meter,
+			ServerAddr: fmt.Sprintf("%s:%d", otelsdk.ServiceName, cfg.Port),
+		},
 	}, postgres.Pinger{Pool: pool}, routes)
 	srv := httpapi.NewServer(cfg.Addr(), api)
 	srv.ErrorLog = slog.NewLogLogger(log.Handler(), slog.LevelWarn)
