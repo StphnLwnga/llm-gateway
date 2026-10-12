@@ -1,0 +1,33 @@
+# Overrides compose.yaml for the overhead load test (loadtests/run.sh). Run it
+# under its own project name so it gets its own network and Postgres volume.
+
+services:
+  gateway:
+    # The repo .env holds real provider keys; this stack talks only to the fake.
+    env_file: !reset []
+    environment:
+      OPENAI_BASE_URL: http://fakeprovider:8081/v1
+      OPENAI_API_KEY: loadtest-not-a-key
+    # k6 reaches every service on the Compose network, so nothing is published
+    # and the test can run next to the normal stack.
+    ports: !reset []
+    depends_on:
+      fakeprovider:
+        condition: service_started
+
+  fakeprovider:
+    ports: !reset []
+
+  k6:
+    image: grafana/k6:2.3.0@sha256:9c2dee7f8ed74d317e4027c06a10f169b625638189de8d4555d0b3486a5aeb34
+    profiles: ["loadtest"]
+    working_dir: /scripts
+    volumes:
+      - ../loadtests/k6:/scripts:ro
+      - ../loadtests/results:/results
+    depends_on:
+      gateway:
+        condition: service_started
+      fakeprovider:
+        condition: service_started
+    restart: "no"
