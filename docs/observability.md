@@ -39,7 +39,7 @@ The GenAI names follow the OpenTelemetry GenAI semantic conventions at commit [6
 
 A failed call sets the span status to error, with the error type as its description. The provider's own message stays in the log. A cancelled call leaves the status unset, because the client chose to leave. The span records no prompt, completion or reasoning text, and no events.
 
-The SDK keeps every span, and the collector decides which traces to keep.
+The SDK keeps every span, and the collector decides which traces to keep. The local collector keeps every trace with an error, every trace longer than 30 s, and 10% of the rest ([development](development.md#observability-stack)).
 
 | Trace context | Behaviour |
 |---|---|

@@ -47,7 +47,9 @@ The gateway takes the OpenAI request shape, so an OpenAI SDK needs only a new ba
 ├── deploy/
 │   ├── docker/
 │   │   └── Dockerfile       distroless, non-root images for the gateway and the fake provider
+│   ├── observability/       collector, Prometheus, Tempo and Grafana configs
 │   ├── compose.yaml         the local stack: Postgres, migrations, gateway
+│   ├── compose.observability.yaml adds the observability stack
 │   └── compose.loadtest.yaml the overhead test stack
 ├── docs/
 │   ├── design.md            the system design and roadmap
@@ -114,9 +116,10 @@ Method, full tables and the connection-pool finding: [docs/benchmarks.md](docs/b
 
 ```bash
 make up              # build the image; start Postgres, run migrations, start the gateway
+make up-obs          # the same, plus the collector, Prometheus, Tempo and Grafana (localhost:3300)
 make logs            # follow the gateway's logs
 make migrate-status  # list migrations and whether each is applied
-make down            # stop the stack; the Postgres volume is kept
+make down            # stop the stack; volumes are kept
 make test            # run every test; the Postgres tests need Docker
 make build           # build both binaries into bin/
 make loadtest        # run the overhead test (about 18 minutes)
