@@ -18,7 +18,7 @@ import (
 // inside another row does not count as documenting it.
 func docLines(t *testing.T, path string) []string {
 	t.Helper()
-	b, err := os.ReadFile(path)
+	b, err := fs.ReadFile(os.DirFS("."), path)
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)
 	}
