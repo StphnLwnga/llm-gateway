@@ -4,18 +4,23 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/StphnLwnga/llm-gateway/internal/fakeupstream"
 	"github.com/StphnLwnga/llm-gateway/internal/httpapi"
 	"github.com/StphnLwnga/llm-gateway/internal/provider"
 	"github.com/StphnLwnga/llm-gateway/internal/provider/openaicompat"
 	"github.com/StphnLwnga/llm-gateway/internal/telemetry"
+	"github.com/StphnLwnga/llm-gateway/internal/telemetry/otelsdk"
 )
 
 func TestChatLogLinesCarryTheServerSpansTraceID(t *testing.T) {
@@ -66,5 +71,76 @@ func checkChatLogTraceIDs(t *testing.T, stream bool) {
 	}
 	if strings.Join(msgs, ",") != "upstream error,chat completion" {
 		t.Errorf("log messages = %q, want the upstream error and the chat completion lines", msgs)
+	}
+}
+
+func TestAnUnsampledClientTraceIsRecordedAndContinuedUpstream(t *testing.T) {
+	t.Parallel()
+	exported := tracetest.NewInMemoryExporter()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSampler(otelsdk.Sampler()), sdktrace.WithSyncer(exported))
+	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
+	prop := propagation.TraceContext{}
+
+	upstreamTraceparent := make(chan string, 1)
+	fake := fakeupstream.New()
+	upstream := serve(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case upstreamTraceparent <- r.Header.Get("traceparent"):
+		default:
+		}
+		fake.ServeHTTP(w, r)
+	}))
+	client := provider.Instrument(provider.NewHTTPClient(time.Second, 5*time.Second), tp, nil, prop)
+	p := openaicompat.New("fake", upstream+"/v1", "test-key", client)
+	h := httpapi.New(slog.New(slog.DiscardHandler), httpapi.Deps{
+		Routes:    resolver{"chat": {{ProviderName: "fake", Provider: p, UpstreamModel: "fake?status=502"}}},
+		Chat:      httpapi.ChatConfig{StatusHold: time.Second, HeartbeatInterval: time.Second, MaxBodyBytes: 4 << 10},
+		Telemetry: httpapi.Telemetry{Tracer: tp, Propagator: prop},
+	})
+	url := serve(t, h)
+
+	const clientTraceID, clientSpanID = "4bf92f3577b34da6a3ce929d0e0e4736", "00f067aa0ba902b7"
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, url+"/v1/chat/completions", strings.NewReader(body(false, "")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("traceparent", "00-"+clientTraceID+"-"+clientSpanID+"-00") // sampled flag 00
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502", resp.StatusCode)
+	}
+
+	var server *tracetest.SpanStub
+	for _, s := range exported.GetSpans() {
+		if s.SpanKind == trace.SpanKindServer {
+			server = &s
+		}
+	}
+	if server == nil {
+		t.Fatalf("no server span was exported (exported %d spans), want one despite the client's flag 00", len(exported.GetSpans()))
+	}
+	if got := server.SpanContext.TraceID().String(); got != clientTraceID {
+		t.Errorf("server span trace ID = %s, want the client's %s", got, clientTraceID)
+	}
+	if got := server.Parent.SpanID().String(); got != clientSpanID {
+		t.Errorf("server span parent = %s, want the client's span %s", got, clientSpanID)
+	}
+	if !server.SpanContext.IsSampled() || server.Status.Code != codes.Error {
+		t.Errorf("server span sampled %v, status %v; want sampled and Error for a 502", server.SpanContext.IsSampled(), server.Status.Code)
+	}
+
+	var got string
+	select {
+	case got = <-upstreamTraceparent:
+	default:
+		t.Fatal("the upstream received no request")
+	}
+	parts := strings.Split(got, "-")
+	if len(parts) != 4 || parts[1] != clientTraceID || parts[3] != "01" {
+		t.Errorf("upstream traceparent = %q, want trace ID %s and sampled flag 01", got, clientTraceID)
 	}
 }

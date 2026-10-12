@@ -78,11 +78,17 @@ func newResource(ctx context.Context, version string) (*resource.Resource, error
 	return res, nil
 }
 
+// Sampler records every span, whatever an incoming traceparent's sampled flag
+// says: the collector's tail sampling makes every keep or drop decision, so a
+// client cannot switch off recording (ADR 0016).
+func Sampler() sdktrace.Sampler {
+	return sdktrace.AlwaysSample()
+}
+
 func newSDKProviders(res *resource.Resource, spans sdktrace.SpanExporter, reader sdkmetric.Reader) *Providers {
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithResource(res),
-		// The collector samples on the finished trace (ADR 0016), so the SDK keeps every span.
-		sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.AlwaysSample())),
+		sdktrace.WithSampler(Sampler()),
 		sdktrace.WithBatcher(spans),
 	)
 	mp := sdkmetric.NewMeterProvider(sdkmetric.WithResource(res), sdkmetric.WithReader(reader))

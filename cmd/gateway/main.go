@@ -15,6 +15,7 @@ import (
 	"syscall"
 
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 
 	"github.com/StphnLwnga/llm-gateway/internal/config"
 	"github.com/StphnLwnga/llm-gateway/internal/httpapi"
@@ -70,12 +71,16 @@ func run(ctx context.Context, getenv func(string) (string, bool), stdout io.Writ
 	}
 	otel.SetTracerProvider(tel.Tracer)
 	otel.SetMeterProvider(tel.Meter)
+	// No Baggage: a client's baggage would be forwarded to third-party providers.
+	prop := propagation.TraceContext{}
+	otel.SetTextMapPropagator(prop)
 	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
 		log.Warn("telemetry export failed", "error", err)
 	}))
 	log.InfoContext(ctx, "telemetry ready", "export", cfg.OTLPEndpoint != "")
 
-	client := provider.NewHTTPClient(cfg.ProviderConnectTimeout, cfg.ProviderFirstByteTimeout)
+	client := provider.Instrument(provider.NewHTTPClient(cfg.ProviderConnectTimeout, cfg.ProviderFirstByteTimeout),
+		tel.Tracer, tel.Meter, prop)
 	registry := providers(ctx, cfg, client, log)
 	for name, p := range registry {
 		registry[name] = &provider.Watchdog{Name: name, Inner: p, FirstEvent: cfg.ProviderFirstTokenTimeout, Stall: cfg.StreamStallTimeout}
@@ -103,6 +108,7 @@ func run(ctx context.Context, getenv func(string) (string, bool), stdout io.Writ
 		Telemetry: httpapi.Telemetry{
 			Tracer:     tel.Tracer,
 			Meter:      tel.Meter,
+			Propagator: prop,
 			ServerAddr: fmt.Sprintf("%s:%d", otelsdk.ServiceName, cfg.Port),
 		},
 	}, postgres.Pinger{Pool: pool}, routes)

@@ -10,6 +10,10 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	metricnoop "go.opentelemetry.io/otel/metric/noop"
+	"go.opentelemetry.io/otel/propagation"
+	tracenoop "go.opentelemetry.io/otel/trace/noop"
 )
 
 func TestHTTPClientLetsAStreamOutliveTheFirstByteTimeout(t *testing.T) {
@@ -74,6 +78,22 @@ func TestHTTPClientTimesOutWaitingForHeaders(t *testing.T) {
 
 func TestHTTPClientReusesConnectionsUnderConcurrency(t *testing.T) {
 	t.Parallel()
+	clients := map[string]func() *http.Client{
+		"plain": func() *http.Client { return NewHTTPClient(5*time.Second, 5*time.Second) },
+		// The tracing transport wraps the pooled one; the pool must still decide.
+		"instrumented": func() *http.Client {
+			return Instrument(NewHTTPClient(5*time.Second, 5*time.Second), tracenoop.NewTracerProvider(), metricnoop.NewMeterProvider(), propagation.TraceContext{})
+		},
+	}
+	for name, newClient := range clients {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			checkConnectionReuse(t, newClient())
+		})
+	}
+}
+
+func checkConnectionReuse(t *testing.T, client *http.Client) {
 	const workers, perWorker = 50, 10
 	var dialed, arrived atomic.Int64
 	allArrived := make(chan struct{})
@@ -95,7 +115,6 @@ func TestHTTPClientReusesConnectionsUnderConcurrency(t *testing.T) {
 	srv.Start()
 	t.Cleanup(srv.Close)
 
-	client := NewHTTPClient(5*time.Second, 5*time.Second)
 	run := func(n int) {
 		var wg sync.WaitGroup
 		for range workers {

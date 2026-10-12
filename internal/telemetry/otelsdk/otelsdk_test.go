@@ -149,7 +149,7 @@ func TestSpanCarriesTheResource(t *testing.T) {
 	}
 }
 
-func TestSamplerFollowsTheParentAndSamplesRoots(t *testing.T) {
+func TestSamplerRecordsEverySpanAndKeepsTheIncomingTraceID(t *testing.T) {
 	t.Parallel()
 	spans := tracetest.NewInMemoryExporter()
 	p := newSDKProviders(nil, spans, sdkmetric.NewManualReader())
@@ -163,13 +163,17 @@ func TestSamplerFollowsTheParentAndSamplesRoots(t *testing.T) {
 		TraceID: trace.TraceID{1}, SpanID: trace.SpanID{1}, Remote: true, // TraceFlags 0: not sampled
 	})
 	_, child := tracer.Start(trace.ContextWithRemoteSpanContext(t.Context(), notSampled), "child")
+	recording := child.IsRecording() // false once the span ends
 	child.End()
 
 	if !root.SpanContext().IsSampled() {
 		t.Error("a root span is not sampled, want every root sampled")
 	}
-	if child.SpanContext().IsSampled() {
-		t.Error("the child of a not-sampled remote parent is sampled, want the parent's decision kept")
+	if !recording || !child.SpanContext().IsSampled() {
+		t.Error("the child of a remote parent with flag 00 is not recorded and sampled, want the collector to decide")
+	}
+	if child.SpanContext().TraceID() != notSampled.TraceID() {
+		t.Errorf("child trace ID = %s, want the incoming %s", child.SpanContext().TraceID(), notSampled.TraceID())
 	}
 }
 

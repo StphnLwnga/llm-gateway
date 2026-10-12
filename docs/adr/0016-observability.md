@@ -9,7 +9,7 @@
 
 The gateway needs traces, RED metrics and the GenAI latency and token metrics, and log lines that link to traces. It is multi-tenant, so every signal could carry a tenant ID. It runs on Compose, kind, EKS and GKE Autopilot ([0006](0006-deploy-targets.md)), so the backend differs per target. A streamed request can last minutes, and most requests succeed quickly, so keeping every trace costs storage for little value.
 
-Four decisions follow: which labels metrics carry, which library records the signals, how signals leave the process, and where traces are sampled.
+Five decisions follow. Four are about the signals: which labels metrics carry, which library records them, how they leave the process, and where traces are sampled. The fifth is how an incoming trace context is treated.
 
 Two facts constrain the metric names:
 
@@ -67,7 +67,21 @@ The exporter uses OTLP over HTTP with protobuf, which the OTLP exporter specific
 | B: head sampling in the gateway, for example 10% | Cheap: an unsampled request records no spans. | The decision is made before the request runs, so it drops 90% of errors and slow requests, which are the traces worth keeping. |
 | C: tail sampling in the collector: keep every error, every slow request and 10% of the rest | Keeps the interesting traces and bounds storage. The policy changes in the collector, with no deploy of the gateway. | The collector holds spans in memory until it decides (30 s by default). Every span of a trace must reach the same collector instance, so more than one collector needs a trace-ID-aware load balancer in front. The gateway exports every span. |
 
-Chosen: C. The SDK sampler is `ParentBased(AlwaysOn)`, so the gateway records and exports every span and leaves the decision to the collector. An incoming `traceparent` that says "not sampled" is still honoured, so an upstream caller's decision holds.
+Chosen: C. The SDK sampler is `AlwaysOn`, so the gateway records and exports every span and leaves the decision to the collector. Decision 5 explains why it is not `ParentBased`.
+
+## Decision 5: incoming trace context
+
+A client can send a W3C `traceparent` header. Its sampled flag says whether the client recorded its own span.
+
+| Option | Pros | Cons |
+|---|---|---|
+| A: trust the incoming context fully (`ParentBased`) | The client's sampling decision holds across services, as the W3C model intends. | A client that sends flag `00` switches off recording in the gateway. Its errors, such as a 502 from a provider, never reach the collector. |
+| B: continue the trace ID and ignore the sampled flag | One trace from the client through the gateway to the provider. The gateway records every request, so the collector's tail sampling sees every error. | The gateway records spans that the client chose not to record. The collector bears that cost and drops what its policy does not keep. |
+| C: start a new root span, and add a span link to the client's context | The client cannot influence the gateway's traces at all. | A trace stops at the gateway. Following a request from a product to a provider needs a link lookup, not one trace. |
+
+Chosen: B. Tail sampling in the collector makes the keep decision, so a client must not be able to switch off recording, errors included. Products that call through the gateway keep one trace from end to end. The SDK sampler is `AlwaysOn`. A span still takes the incoming context as its parent, so the trace ID continues. The request to the provider carries the trace context with the sampled flag set, because the gateway always records.
+
+The propagator is W3C TraceContext only, with no Baggage. Nothing in the gateway reads baggage yet. A client's baggage would also be forwarded to third-party providers, with whatever data the client put in it.
 
 ## Consequences
 
@@ -75,7 +89,8 @@ Chosen: C. The SDK sampler is `ParentBased(AlwaysOn)`, so the gateway records an
 - Good: metrics and traces come from one SDK and share the request context.
 - Bad: the gateway binary grows by about 8 MB, and the compressed image by about 2.8 MB.
 - Good: the gateway code has one export path, and the backend is a collector setting.
-- Good: every error and slow request keeps its full trace.
+- Good: every error and slow request keeps its full trace, even when the client sent flag `00`.
+- Good: a request keeps one trace ID from the client through the gateway to the provider.
 - Bad: per-tenant latency needs a trace or log query, not a metrics panel.
 - Bad: the collector is on the telemetry path. When it is down, the SDK drops what it cannot send, and the gateway logs the export failures.
 - Bad: tail sampling needs memory in the collector, and a trace-aware load balancer when there is more than one collector.
@@ -93,4 +108,5 @@ Chosen: C. The SDK sampler is `ParentBased(AlwaysOn)`, so the gateway records an
 - Google Cloud Telemetry (OTLP) API: https://cloud.google.com/stackdriver/docs/reference/telemetry/overview
 - Collector SigV4 authentication extension: https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/extension/sigv4authextension
 - Prometheus instrumentation practices (label cardinality): https://prometheus.io/docs/practices/instrumentation/
+- W3C Trace Context (the `traceparent` header and its flags): https://www.w3.org/TR/trace-context/
 - Related: [0006](0006-deploy-targets.md) (deploy targets), [0012](0012-streaming-interface-callback.md) (provider error kinds)
