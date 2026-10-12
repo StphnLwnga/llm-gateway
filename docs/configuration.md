@@ -25,4 +25,9 @@ Provider keys go in a `.env` file at the repo root, which Compose passes to the 
 | `OPENAI_API_KEY` | none | The platform key for OpenAI. When it is not set, OpenAI is disabled and the gateway logs that at startup. Never printed or logged. |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | An http or https URL: OpenAI's API, or a compatible endpoint |
 | `OLLAMA_BASE_URL` | none | An http or https URL, for example `http://localhost:11434`. Ollama is enabled only when this is set; it needs no key. From inside Compose, Ollama on the host is `http://host.docker.internal:11434`. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | none | An http or https URL of an OTLP/HTTP receiver, for example `http://otel-collector:4318`. When it is set, the gateway exports traces and metrics there (`/v1/traces`, `/v1/metrics`). When it is not set or empty, telemetry is off and costs nothing. |
+| `OTEL_SERVICE_NAME` | `llm-gateway` | The `service.name` resource attribute. Read by the OpenTelemetry SDK. |
+| `OTEL_RESOURCE_ATTRIBUTES` | none | Extra resource attributes as `key=value` pairs, separated by commas, for example `deployment.environment.name=staging`. Read by the OpenTelemetry SDK. |
 | `ROUTES_REFRESH_INTERVAL` | `10s` | A Go duration above 0. How often the gateway reloads the routes table into memory. A change made with `gatewayctl routes` takes effect within one interval. |
+
+The OpenTelemetry SDK also reads the other standard `OTEL_EXPORTER_OTLP_*` settings, such as headers, timeout and compression. The sampler is fixed: the SDK keeps every span, and the collector samples ([ADR 0016](adr/0016-observability.md)).

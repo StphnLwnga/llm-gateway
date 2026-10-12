@@ -49,6 +49,7 @@ Decisions are recorded in [docs/adr/](adr/README.md). Reference pages: [API](api
 | Gateway overhead over the upstream is measured | k6 p50 and p95 against a fake upstream (`make loadtest`). Measured 2026-10-12: 1 to 3 ms p50 added at 5 ms per token and 1 or 10 VUs, about 0.2 to 0.3 ms of the gateway's own cost per request at 0 ms and 1 VU, 0 errors in every case. Results in [benchmarks.md](benchmarks.md). | Built (M1), measured |
 | No usage is lost and none is counted twice when Kafka is down | Stop Kafka, send 100 requests, restart: 100 ledger rows, 0 duplicates after injected duplicates | Planned (M6) |
 | Tenant A never reaches tenant B's credential, cache entry or request log | Isolation suite that attempts each access and fails if it succeeds | Planned (M3, M11) |
+| Telemetry setup: OpenTelemetry tracer and meter providers exported over OTLP/HTTP, no-op when no endpoint is set, flushed after the HTTP server stops and inside the shutdown budget; log lines in a span carry its trace and span IDs ([0016](adr/0016-observability.md)) | Tests against a fake OTLP/HTTP server (no export without an endpoint, every span and metric exported on shutdown), an in-memory exporter (resource, sampler), and the JSON log output | Built (M2) |
 | Traces, RED metrics, time to first token and time per output token | Recorded-metrics and trace-propagation tests | Planned (M2) |
 | The same manifests run on kind, EKS and GKE Autopilot | Kustomize base with an overlay per target ([0006](adr/0006-deploy-targets.md)) | Planned (M8, M12, M13) |
 
