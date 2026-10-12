@@ -85,5 +85,5 @@ export function handleSummary(data) {
   const fmt = (v) => (v === undefined ? '-' : v.toFixed(2));
   const line = [TARGET, MODE, VUS, d.count || 0, fmt(d.med), fmt(d['p(95)']), fmt(d.max),
     f.rate === undefined ? '-' : (f.rate * 100).toFixed(2)].join('\t') + '\n';
-  return { [`/results/${MODE}-${VUS}-${TARGET}.tsv`]: line, stdout: line };
+  return { [`/results/${__ENV.TPOT}-${MODE}-${VUS}-${TARGET}.tsv`]: line, stdout: line };
 }

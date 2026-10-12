@@ -31,3 +31,12 @@ services:
       fakeprovider:
         condition: service_started
     restart: "no"
+
+  upstream-sockets:
+    image: busybox:1.37@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
+    profiles: ["loadtest"]
+    # Shares the gateway's network namespace to count its sockets to the fake
+    # (port 8081 is 1F91) in TIME_WAIT (state 06), once a second.
+    network_mode: service:gateway
+    command: ["sh", "-c", "while true; do cat /proc/net/tcp /proc/net/tcp6 | awk '$$4 == \"06\" && $$3 ~ /:1F91$$/' | wc -l; sleep 1; done"]
+    restart: "no"
