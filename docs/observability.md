@@ -21,6 +21,7 @@ The SDK keeps every span, and the collector decides which traces to keep.
 | No `traceparent` | The server span starts a new trace. |
 | Request to a provider | Carries a `traceparent` with the same trace ID and the sampled flag `01`. |
 | Baggage | Not read and not forwarded. |
+| `/healthz` and `/readyz` | No span. Their metrics are recorded (decision 6). |
 
 ## Metrics
 

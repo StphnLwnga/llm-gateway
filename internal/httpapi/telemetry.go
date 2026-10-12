@@ -9,7 +9,12 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	semconv "go.opentelemetry.io/otel/semconv/v1.43.0"
 	"go.opentelemetry.io/otel/trace"
+	tracenoop "go.opentelemetry.io/otel/trace/noop"
 )
+
+// Probes get metrics but no spans (ADR 0016): a probe trace has no debugging
+// value, and a failing readiness check must still show in the metrics.
+var untracedPaths = map[string]bool{"/healthz": true, "/readyz": true}
 
 // Telemetry records the server spans and metrics. Nil providers and a nil
 // propagator use the global ones.
@@ -24,7 +29,8 @@ type Telemetry struct {
 }
 
 // instrument records one server span and the http.server.* metrics for each
-// request. The route is the ServeMux pattern that matched, never the raw path.
+// request, and only the metrics for a probe. The route is the ServeMux
+// pattern that matched, never the raw path.
 // mux must be a *http.ServeMux, which sets the request's Pattern.
 func instrument(mux http.Handler, t Telemetry) http.Handler {
 	var opts []otelhttp.Option
@@ -50,5 +56,16 @@ func instrument(mux http.Handler, t Telemetry) http.Handler {
 			trace.SpanFromContext(r.Context()).SetAttributes(semconv.HTTPRoute(r.Pattern[i:]))
 		}
 	})
-	return otelhttp.NewHandler(withRoute, "http.server", opts...)
+	traced := otelhttp.NewHandler(withRoute, "http.server", opts...)
+	// otelhttp's filter would drop the metrics too, so probes go through a
+	// second handler whose tracer records nothing.
+	untraced := otelhttp.NewHandler(withRoute, "http.server",
+		append(opts, otelhttp.WithTracerProvider(tracenoop.NewTracerProvider()))...)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if untracedPaths[r.URL.Path] {
+			untraced.ServeHTTP(w, r)
+			return
+		}
+		traced.ServeHTTP(w, r)
+	})
 }

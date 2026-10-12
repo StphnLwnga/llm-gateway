@@ -9,7 +9,7 @@
 
 The gateway needs traces, RED metrics and the GenAI latency and token metrics, and log lines that link to traces. It is multi-tenant, so every signal could carry a tenant ID. It runs on Compose, kind, EKS and GKE Autopilot ([0006](0006-deploy-targets.md)), so the backend differs per target. A streamed request can last minutes, and most requests succeed quickly, so keeping every trace costs storage for little value.
 
-Five decisions follow. Four are about the signals: which labels metrics carry, which library records them, how they leave the process, and where traces are sampled. The fifth is how an incoming trace context is treated.
+Six decisions follow. Four are about the signals: which labels metrics carry, which library records them, how they leave the process, and where traces are sampled. Two are about requests: how an incoming trace context is treated, and whether health probes are traced.
 
 Two facts constrain the metric names:
 
@@ -82,6 +82,18 @@ A client can send a W3C `traceparent` header. Its sampled flag says whether the 
 Chosen: B. Tail sampling in the collector makes the keep decision, so a client must not be able to switch off recording, errors included. Products that call through the gateway keep one trace from end to end. The SDK sampler is `AlwaysOn`. A span still takes the incoming context as its parent, so the trace ID continues. The request to the provider carries the trace context with the sampled flag set, because the gateway always records.
 
 The propagator is W3C TraceContext only, with no Baggage. Nothing in the gateway reads baggage yet. A client's baggage would also be forwarded to third-party providers, with whatever data the client put in it.
+
+## Decision 6: health and readiness probes
+
+Kubernetes calls `/healthz` and `/readyz` every few seconds on every pod.
+
+| Option | Pros | Cons |
+|---|---|---|
+| A: spans and metrics for probes | Nothing is special-cased. | A probe trace has no debugging value. Probes produce more traces than real traffic on an idle pod, and tail sampling keeps 10% of them. |
+| B: metrics only, no spans | A failing readiness check stays visible in the metrics, by route and status. No probe traces to store. | Two handler paths in the instrumentation: probes go through one whose tracer records nothing. |
+| C: neither spans nor metrics (the OpenTelemetry HTTP handler's filter) | The simplest setting. | A 503 from `/readyz` during an outage or a drain disappears from the metrics. |
+
+Chosen: B. Probe traces add noise and storage cost but no debugging value, while a readiness failure must stay visible in the metrics.
 
 ## Consequences
 

@@ -15,12 +15,29 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+
+	"github.com/StphnLwnga/llm-gateway/internal/provider"
 )
 
 type recorded struct {
 	spans  *tracetest.SpanRecorder
 	reader *sdkmetric.ManualReader
 }
+
+// unavailable is a provider whose upstream is down.
+type unavailable struct{}
+
+func (unavailable) Chat(context.Context, provider.Request) (provider.Response, error) {
+	return provider.Response{}, &provider.Error{Provider: "down", Kind: provider.KindUpstreamUnavailable}
+}
+
+func (unavailable) Stream(context.Context, provider.Request, func(provider.Event) error) error {
+	return &provider.Error{Provider: "down", Kind: provider.KindUpstreamUnavailable}
+}
+
+type routes map[string][]Target
+
+func (r routes) Resolve(alias string) []Target { return r[alias] }
 
 func instrumented(t *testing.T) (*Handler, recorded) {
 	t.Helper()
@@ -33,6 +50,7 @@ func instrumented(t *testing.T) (*Handler, recorded) {
 		_ = mp.Shutdown(context.Background())
 	})
 	h := New(slog.New(slog.DiscardHandler), Deps{
+		Routes:    routes{"down": {{ProviderName: "down", Provider: unavailable{}}}},
 		Telemetry: Telemetry{Tracer: tp, Meter: mp, ServerAddr: "llm-gateway:8080"},
 	})
 	return h, recorded{spans: spans, reader: reader}
@@ -79,8 +97,12 @@ func TestAServerErrorMarksTheSpanButAClientErrorDoesNot(t *testing.T) {
 	t.Parallel()
 	h, rec := instrumented(t)
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v1/nope", nil))
-	h.StartDraining()
-	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/readyz", nil))
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/v1/chat/completions",
+		strings.NewReader(`{"model":"down","messages":[{"role":"user","content":"hi"}]}`)))
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("chat with the upstream down = %d, want 502", w.Code)
+	}
 
 	ended := rec.spans.Ended()
 	if len(ended) != 2 {
@@ -90,7 +112,7 @@ func TestAServerErrorMarksTheSpanButAClientErrorDoesNot(t *testing.T) {
 		t.Errorf("404 span status = %v, want Unset: a client error is not a server fault", got)
 	}
 	if got := ended[1].Status().Code; got != codes.Error {
-		t.Errorf("503 span status = %v, want Error", got)
+		t.Errorf("502 span status = %v, want Error", got)
 	}
 }
 
@@ -160,5 +182,49 @@ func TestTheInstrumentedWriterKeepsWriteDeadlinesAndFlush(t *testing.T) {
 	got := <-errs
 	if got[0] != nil || got[1] != nil {
 		t.Errorf("through the instrumentation, SetWriteDeadline = %v and Flush = %v; want both nil (streams set a deadline per event)", got[0], got[1])
+	}
+}
+
+func TestProbesRecordMetricsButNoSpans(t *testing.T) {
+	t.Parallel()
+	h, rec := instrumented(t)
+	get := func(path string) {
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, nil))
+	}
+	get("/healthz")
+	get("/readyz")
+	h.StartDraining()
+	get("/readyz")
+	get("/v1/models")
+
+	var names []string
+	for _, s := range rec.spans.Ended() {
+		names = append(names, s.Name())
+	}
+	if len(names) != 1 || names[0] != "GET /v1/models" {
+		t.Errorf("spans = %q, want only GET /v1/models: probes record no spans", names)
+	}
+
+	var rm metricdata.ResourceMetrics
+	if err := rec.reader.Collect(t.Context(), &rm); err != nil {
+		t.Fatalf("collect: %v", err)
+	}
+	counts := map[string]uint64{}
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			if m.Name != "http.server.request.duration" {
+				continue
+			}
+			for _, p := range m.Data.(metricdata.Histogram[float64]).DataPoints {
+				a := attrsOf(p.Attributes.ToSlice())
+				counts[a["http.route"]+" "+a["http.response.status_code"]] += p.Count
+			}
+		}
+	}
+	want := map[string]uint64{"/healthz 200": 1, "/readyz 200": 1, "/readyz 503": 1, "/v1/models 200": 1}
+	for k, v := range want {
+		if counts[k] != v {
+			t.Errorf("requests %q = %d, want %d (all counts %v)", k, counts[k], v, counts)
+		}
 	}
 }
