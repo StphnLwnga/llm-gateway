@@ -142,6 +142,10 @@ Every attribute has a bounded set of values:
 
 No metric carries a tenant, a request ID, the response model, a provider timing or a model alias from the request.
 
+## Dashboards
+
+Two Grafana dashboards chart these metrics: one for the gateway and one for the collector. The [development page](development.md#dashboards) lists them and explains how to change them.
+
 ## Logs
 
 A log line written inside a request carries the `trace_id` and `span_id` of the server span. The request line (`chat completion`) and the `upstream error` line both have them, so a log search leads to the trace.

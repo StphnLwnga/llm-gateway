@@ -47,7 +47,7 @@ The gateway takes the OpenAI request shape, so an OpenAI SDK needs only a new ba
 ├── deploy/
 │   ├── docker/
 │   │   └── Dockerfile       distroless, non-root images for the gateway and the fake provider
-│   ├── observability/       collector, Prometheus, Tempo and Grafana configs
+│   ├── observability/       collector, Prometheus, Tempo and Grafana configs, and the dashboards
 │   ├── compose.yaml         the local stack: Postgres, migrations, gateway
 │   ├── compose.observability.yaml adds the observability stack
 │   └── compose.loadtest.yaml the overhead test stack

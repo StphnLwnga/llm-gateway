@@ -30,7 +30,7 @@ The [configuration page](configuration.md) lists every setting.
 
 | Service | Address on the host | Notes |
 |---|---|---|
-| Grafana | http://localhost:3300 | User `admin`, password `grafana-local`, or `GRAFANA_ADMIN_PASSWORD` when it is set. Prometheus and Tempo are provisioned as data sources. |
+| Grafana | http://localhost:3300 | User `admin`, password `grafana-local`, or `GRAFANA_ADMIN_PASSWORD` when it is set. Prometheus and Tempo are provisioned as data sources. `GF_SERVER_ROOT_URL` must match the host port, or share links point to the wrong port. |
 | Prometheus | http://localhost:9090 | Receives the collector's metrics over OTLP, and scrapes the collector's own metrics |
 | Tempo | http://localhost:3200 | Trace queries |
 | Collector | http://localhost:4318 | OTLP/HTTP, for a gateway run on the host: `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 go run ./cmd/gateway` |
@@ -47,6 +47,34 @@ docker run --rm --network llm-gateway_default "$TG" traces --otlp-endpoint otel-
 ```
 
 A config file mounted into a container must exist before `make up-obs`. When the host file is missing, Docker creates an empty directory in its place, and the service fails later with an error such as "is a directory". `test -f` on each mounted file catches it first.
+
+### Dashboards
+
+Grafana loads two dashboards from `deploy/observability/grafana/dashboards/` into the folder `llm-gateway`:
+
+| Dashboard | Address | Shows |
+|---|---|---|
+| Gateway | http://localhost:3300/d/llm-gateway | Requests by route, provider calls, and stream outcomes that the status code cannot show |
+| Telemetry pipeline | http://localhost:3300/d/llm-gateway-pipeline | The collector: spans in and refused, sampling decisions, export queues, send failures and memory |
+
+The files are the source. The UI cannot save over them. Grafana has no volume, so anything saved only in the UI is lost when the container is recreated. Alert rules come with milestone 4.
+
+The panels use `$__rate_interval`, which is at least 1 minute here. `make up-obs` makes the gateway export metrics every 15 s (`OTEL_METRIC_EXPORT_INTERVAL`), the same as the Prometheus scrape interval, and the data source sets `timeInterval: 15s` to match. A shorter export interval than the SDK default of 60 s keeps short load steps visible.
+
+To change a dashboard:
+
+1. Load the file into Grafana as a draft with another uid:
+   ```bash
+   python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); d["uid"]="draft-"+d["uid"]; d["title"]+=" draft"; print(json.dumps({"dashboard":d,"overwrite":True}))' \
+     deploy/observability/grafana/dashboards/gateway.json \
+     | curl -s -u admin:grafana-local -H 'Content-Type: application/json' localhost:3300/api/dashboards/db -d @-
+   ```
+2. Edit the draft in the UI, and save it.
+3. Export it: **Export**, **Export as code**, **Advanced options**, **Model: Classic**. Keep **Export for sharing externally** off, so the data source uids stay `prometheus` and `tempo`.
+4. In a file outside the dashboards folder, remove the top-level `id` and `version`, and set `uid` and `title` back to the old values. Grafana reads the folder every 10 s, so a half-edited file there goes live.
+5. Move the file over the old one. Then delete the draft: `curl -s -u admin:grafana-local -X DELETE localhost:3300/api/dashboards/uid/draft-<uid>`.
+
+A provisioned dashboard cannot be exported after an edit. Grafana asks you to save it first, and the JSON it offers instead uses the V2 schema.
 
 ## Tests
 
