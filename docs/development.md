@@ -37,7 +37,7 @@ The [configuration page](configuration.md) lists every setting.
 
 Every port is bound to 127.0.0.1. The collector, Prometheus and Tempo have no authentication, and Grafana uses a local default password. Prometheus and Tempo keep 7 days of data in named volumes, so `make down` keeps them.
 
-The collector tail-samples traces. It keeps every trace with an error, every trace longer than 30 s, and 10% of the rest. It decides 5 s after a trace's root span arrives, and at most 300 s after its first span. A request that continues a client's trace has no root span in this collector, so its trace waits the full 300 s. Most traces of successful requests never reach Tempo, and a kept trace is searchable in Tempo up to about 30 s later. Metrics are not sampled. The configs are in `deploy/observability/`.
+The collector tail-samples traces. It keeps every trace with an error, every trace longer than 30 s, every trace with a first chunk slower than 1 s, and 10% of the rest. `TRACE_SAMPLE_PERCENT=100 make up-obs` keeps every trace ([observability](observability.md#genai-span)). It decides 5 s after a trace's root span arrives, and at most 300 s after its first span. A request that continues a client's trace has no root span in this collector, so its trace waits the full 300 s. Most traces of successful requests never reach Tempo, and a kept trace is searchable in Tempo up to about 30 s later. Metrics are not sampled. The configs are in `deploy/observability/`.
 
 To check the stack without the gateway, send test data with telemetrygen:
 

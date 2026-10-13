@@ -58,11 +58,12 @@ The gateway takes the OpenAI request shape, so an OpenAI SDK needs only a new ba
 │   ├── configuration.md     every setting
 │   ├── observability.md     traces, metrics and log correlation
 │   ├── fake-provider.md     the fake provider and its fault modes
-│   ├── benchmarks.md        the overhead test: method and full results
+│   ├── benchmarks.md        the overhead and local model tests: method and full results
 │   └── development.md       running locally, shutdown, CI
 ├── loadtests/
 │   ├── k6/
-│   │   └── overhead.js      one overhead case
+│   │   ├── overhead.js      one overhead case
+│   │   └── ollama-ttft.js   streamed requests to a local model, at a fixed concurrency
 │   └── run.sh               runs every overhead case and prints the tables
 ├── .github/                 CI workflow, Dependabot, pull request template
 ├── .golangci.yml            lint settings
@@ -104,8 +105,9 @@ curl -N localhost:8080/v1/chat/completions \
 | Peak gateway memory under load | 69 MiB | Whole overhead run, 128 MiB limit, 2026-10-12 |
 | Image size, compressed | 8.17 MB | `docker save` with gzip, 2026-10-12 |
 | Cold start to ready | 179 to 185 ms | Container start to the first `/readyz` 200, 3 runs, 2026-10-12 |
+| Time to first token, local model | 0.45 s p50 warm, 1.29 s p50 memory-cold | `llama3.2:3b` in Ollama, Apple M4, 1 user, 2026-10-14 |
 
-Method, full tables and the connection-pool finding: [docs/benchmarks.md](docs/benchmarks.md).
+Method, full tables, the connection-pool finding and the local model under load: [docs/benchmarks.md](docs/benchmarks.md).
 
 ## Design
 

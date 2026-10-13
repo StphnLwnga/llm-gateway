@@ -86,7 +86,10 @@ Peaks for the whole run:
 - **Stream against non-stream.** A stream costs the gateway about twice as much as a non-streamed answer: 6,940 against 13,448 req/s at 100 VUs.
   - Both read 20 upstream events.
   - A stream also writes and flushes 20 events to the client. A non-streamed answer writes one JSON body.
-- **Stream at 10 VUs.** The added p95 was higher than at the other levels in two separate runs (10.73 ms and 8.14 ms). The cause is not known yet. A trace per stage of the request (M2, observability) can show it.
+- **Stream at 10 VUs.** The added p95 was higher than at the other levels in two separate runs (10.73 ms and 8.14 ms). The cause is not known yet.
+  - A rerun on 2026-10-14 kept every trace (5 ms between tokens, 10 VUs). The gateway added 2.63 ms p50 and 4.35 ms p95 to a stream, and 1.21 ms and 1.58 ms to a non-streamed answer.
+  - The gateway's work outside the GenAI span was 0.77 ms p95 for a stream and 0.49 ms for a non-streamed answer. The rest of the tail is inside the HTTP client span.
+  - In a stream, the HTTP client span also holds the write of each event to the client. Thus, a trace cannot split the provider's time from the write time.
 - **TW peak 3 and 12.** A few upstream connections closed at 0 ms and 100 VUs. The cause is not yet identified. The count is far below the ephemeral port range.
 
 ## Upstream connection pool
@@ -106,3 +109,67 @@ Measured 2026-10-12 against the fake provider: 100 virtual users, streamed, 5 ms
 | Errors | 1,028 (0.39%): `502`, from dials that failed with `cannot assign requested address` | 0 |
 
 With the pool, about 100 connections to the fake stayed established for the whole run. In the run with the Go default, the first 10 s are left out. The route had not loaded yet, so those requests got `404`. The `502` responses all came before the gateway sent a status.
+
+## Time to first token on a local model
+
+This test measures how the time to first token (TTFT) of a small local model changes with load. It uses 1, 5 and 20 concurrent requests, with 1 and 4 parallel slots in Ollama. A slot is one request that the model works on at the same time as others. The gateway only passes the stream through, so the numbers describe the model server.
+
+```bash
+TRACE_SAMPLE_PERCENT=100 make up-obs      # keep every trace, for the Ollama timings
+docker compose -f deploy/compose.yaml run --rm migrate \
+  routes add --alias local --provider ollama --upstream-model llama3.2:3b --priority 10
+K6=grafana/k6:2.3.0@sha256:9c2dee7f8ed74d317e4027c06a10f169b625638189de8d4555d0b3486a5aeb34
+docker run --rm --network llm-gateway_default -v "$PWD/loadtests/k6:/scripts:ro" \
+  -e LEVEL=5 -e ROUNDS=4 "$K6" run --quiet /scripts/ollama-ttft.js
+```
+
+`LEVEL` is the number of virtual users, and `ROUNDS` the number of requests each one sends in sequence.
+
+### Setup
+
+| Part | Detail |
+|---|---|
+| Machine | Apple M4 Mac mini, 16 GB. k6, Docker and the observability stack ran on the same Mac as the model. |
+| Model server | Ollama 0.40.3 (Ollama.app) on the host, with a context of 4096 tokens. |
+| Model | `llama3.2:3b`, Q4_K_M, 2,019,393,189 bytes, on an external drive. |
+| k6 | `grafana/k6:2.3.0`, the same image as the overhead test, with `loadtests/k6/ollama-ttft.js`. The `per-vu-iterations` executor gives each virtual user a fixed number of requests. |
+| Request | Streamed, a prompt of 243 tokens, `max_tokens` 128, `temperature` 0. Every answer reached 128 tokens. |
+| Slots | `OLLAMA_NUM_PARALLEL`. On macOS, quit Ollama, then start it with `open -a Ollama --env OLLAMA_NUM_PARALLEL=4`. `launchctl setenv` did not reach Ollama.app in this test. |
+
+### Method
+
+- **TTFT.** `ttft_ms` from the gateway's request log line: from the request's arrival to the first content written to the client. Every request writes the line, so it is not sampled.
+- **Ollama timings.** The model load, prefill and decode times come from the GenAI span (`llm_gateway.provider.*_duration`). Thus, the runs keep every trace.
+- **Prefix cache.** Each prompt starts with a unique ID. A prefix cache cannot reuse a prompt whose first token differs, so every request does the full prefill.
+- **Load model.** A closed loop: each virtual user sends its next request when the previous one ends. It is not an arrival rate.
+- **Model state.** Warm: the model is in memory. Memory-cold: the model is not loaded, and its file is in the macOS page cache. Disk-cold: `sudo purge` empties the page cache, so the load reads the file from the drive.
+- **OK.** A request is OK when it is `200` and the stream ends with `data: [DONE]`.
+
+### Results
+
+Measured 2026-10-14 on the machine above.
+
+| Slots | Model state | VUs | TTFT p50 (s) | TTFT max (s) | OK | Notes |
+|---|---|---|---|---|---|---|
+| 1 | memory-cold | 1 | 1.29 | 4.32 | 5/5 | Load 0.79 s once the file is in the page cache |
+| 1 | disk-cold | 1 | 4.34 | 4.61 | 5/5 | Load 3.83 to 4.09 s |
+| 1 | memory-cold | 5 | 7.89 | 14.55 | 5/5 | |
+| 1 | memory-cold | 20 | 29.2 | 57.6 | 18/20 | 2 first-token watchdog timeouts at 60 s |
+| 1 | warm | 1 | 0.45 | 0.47 | 10/10 | Prefill 0.43 s; decode 2.9 s for 128 tokens (44 tokens/s) |
+| 1 | warm | 5 | 14.43 | 15.05 | 20/20 | TTFT rises in steps of 3.35 s, one service time |
+| 1 | warm | 20 | 58.9 | 59.9 | 36/40 | 4 first-token watchdog timeouts |
+| 4 | warm | 1 | 0.43 | 0.48 | 10/10 | |
+| 4 | warm | 5 | 1.99 | 11.95 | 20/20 | Decode 8.7 to 9.8 s per stream |
+| 4 | warm | 20 | 44.2 | 45.2 | 40/40 | A batch starts about every 10.8 s |
+
+`ollama ps` showed the model at 2.5 GB with 1 slot, and 4.0 GB with 4 slots.
+
+### Reading the results
+
+- **Prefill and decode.** Prefill reads all prompt tokens in one pass, so compute limits it. At batch 1, decode reads all the model weights for each token, so memory bandwidth limits it. The ceiling is about 120 GB/s / 2.02 GB = 59 tokens/s. The measured rate was 42 to 44 tokens/s.
+- **One slot.** Ollama works on one request at a time, and the others wait before prefill. Thus, the queue shows only in TTFT.
+  - At 5 VUs, TTFT rose in steps of 3.35 s: the prefill and decode of the request ahead.
+  - Little's law (N = X x R) agrees: 5 requests in flight at one request per 3.35 s gives about 16.8 s per request, which is the TTFT plus the decode.
+- **Past saturation.** At 20 VUs with 1 slot, some requests waited longer than `PROVIDER_FIRST_TOKEN_TIMEOUT` (60 s). The status hold had already sent `200` and heartbeats. Thus, the stream ended with an error event and no `[DONE]`.
+- **Four slots.** TTFT fell, for example from 14.43 s to 1.99 s p50 at 5 VUs. But each stream decoded about 3 times slower: about 14 tokens/s per stream, about 56 in total. One decode step for 4 streams took about 70 ms, against 22.5 ms for one stream. The cause is not verified.
+- **Limits.** k6, Docker and the stack share the Mac with the model. The test is a closed loop, so it does not show the TTFT at a given arrival rate.

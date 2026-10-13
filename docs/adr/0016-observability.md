@@ -9,7 +9,7 @@
 
 The gateway needs traces, RED metrics and the GenAI latency and token metrics, and log lines that link to traces. It is multi-tenant, so every signal could carry a tenant ID. It runs on Compose, kind, EKS and GKE Autopilot ([0006](0006-deploy-targets.md)), so the backend differs per target. A streamed request can last minutes, and most requests succeed quickly, so keeping every trace costs storage for little value.
 
-Eighteen decisions follow. Four are about the signals: which labels metrics carry, which library records them, how they leave the process, and where traces are sampled. Two are about requests: how an incoming trace context is treated, and whether health probes are traced. Twelve are about the GenAI span and metrics of each provider call, and the gateway's own chat metrics.
+Nineteen decisions follow. Four are about the signals: which labels metrics carry, which library records them, how they leave the process, and where traces are sampled. Two are about requests: how an incoming trace context is treated, and whether health probes are traced. Twelve are about the GenAI span and metrics of each provider call, and the gateway's own chat metrics. The last one adds a sampling rule for a slow first chunk.
 
 Two facts constrain the metric names:
 
@@ -241,6 +241,18 @@ Groq reports its queue, prompt, completion and total time in the usage object, i
 
 Chosen: C. A timing that the provider does not report has no attribute, because 0 is a real value.
 
+## Decision 19: a slow first chunk in tail sampling
+
+Decision 4 keeps every error, every trace longer than 30 s and 10% of the rest. A model load or a queue in the model server delays the first chunk by seconds, but the request still succeeds in less than 30 s. Thus, the baseline drops 90% of these traces. On a local `llama3.2:3b` ([benchmarks](../benchmarks.md#time-to-first-token-on-a-local-model)), a warm first chunk took about 0.45 s, and a memory-cold one 1.3 to 2 s.
+
+| Option | Pros | Cons |
+|---|---|---|
+| A: no rule | No change. | The baseline drops 90% of cold starts and queued requests. |
+| B: keep a trace when `gen_ai.response.time_to_first_chunk` is above 2.0 s | Fewer traces kept. | Misses the memory-cold loads of 1.3 to 2 s. |
+| C: the same rule above 1.0 s | Keeps every measured model load and queue wait, at about twice the warm time. | Under overload almost every request passes the rule, so the number of kept traces rises with the load. |
+
+Chosen: C, as the collector policy `slow-first-token` (`ottl_condition` on the GenAI span). The threshold comes from the measured data.
+
 ## Consequences
 
 - Good: the metric series count does not grow with the number of tenants.
@@ -257,6 +269,8 @@ Chosen: C. A timing that the provider does not report has no attribute, because 
 - Bad: there are two times to first token: the conventions' one per provider call, and the gateway's one per request. Dashboards must say which one they show.
 - Bad: a provider's change of model version shows in traces, not in metric labels.
 - Good: a trace shows how much of a slow first chunk was the provider's queue, model load or prefill.
+- Good: every request whose first chunk took more than 1 s keeps its trace, with those timings.
+- Bad: during overload, almost every trace passes the 1 s rule, so the trace volume rises with the load.
 - Bad: the GenAI conventions are in development. A rename upstream means a code change and a dashboard change, and the pin records which version the code follows.
 
 ## Links

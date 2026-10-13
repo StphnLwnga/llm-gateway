@@ -52,7 +52,18 @@ Groq sends the usage in `usage` and in `x_groq.usage` of a streamed answer. The 
 
 A failed call sets the span status to error, with the error type as its description. The provider's own message stays in the log. A cancelled call leaves the status unset, because the client chose to leave. The span records no prompt, completion or reasoning text, and no events.
 
-The SDK keeps every span, and the collector decides which traces to keep. The local collector keeps every trace with an error, every trace longer than 30 s, and 10% of the rest ([development](development.md#observability-stack)).
+The SDK keeps every span, and the collector decides which traces to keep. The local collector keeps a trace when one of these policies matches ([development](development.md#observability-stack)):
+
+| Policy | Keeps |
+|---|---|
+| `errors` | Every trace with a span in error |
+| `slow` | Every trace longer than 30 s |
+| `slow-first-token` | Every trace with a GenAI span whose `gen_ai.response.time_to_first_chunk` is above 1 s |
+| `baseline` | 10% of the rest, or `TRACE_SAMPLE_PERCENT` |
+
+- **Why 1 s.** A warm local model sends its first chunk in about 0.45 s ([benchmarks](benchmarks.md#time-to-first-token-on-a-local-model)). Above 1 s means a model load or a queue, and the baseline would drop 90% of those traces ([ADR 0016](adr/0016-observability.md), decision 19).
+- **Under overload.** Almost every request waits longer than 1 s for its first chunk. Thus, the number of kept traces rises with the load.
+- **`TRACE_SAMPLE_PERCENT`.** An environment variable of the collector, not of the gateway. The default is 10. Set it to 100 to keep every trace for an experiment: `TRACE_SAMPLE_PERCENT=100 make up-obs`.
 
 | Trace context | Behaviour |
 |---|---|
