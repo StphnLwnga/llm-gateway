@@ -29,7 +29,7 @@ export const options = {
 export default function () {
 	// The unique ID comes first: a prefix cache cannot reuse a prompt
 	// whose first token differs.
-	const id = `Request ${__VU}-${__ITER}-${Date.now()}.`;
+	const id = `Ref ${__VU}-${__ITER}-${Date.now()}`;
 	const body = JSON.stringify({
 		model: 'local',
 		stream: true,
@@ -37,7 +37,7 @@ export default function () {
 		max_tokens: 128,
 		temperature: 0,
 		messages: [{
-			role: 'user', content: `${id} Summarize this text in one paragraph.\n\n${passage}`
+			role: 'user', content: `${id}\n\nSummarize this text in one paragraph of about 150 words.\n\n${passage}`
 		}],
 	});
 	const r = http.post('http://gateway:8080/v1/chat/completions', body, params);
