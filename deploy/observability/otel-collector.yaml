@@ -29,6 +29,14 @@ processors:
         type: latency
         latency:
           threshold_ms: 30000
+      # A warm local model sends its first chunk in about 0.45 s. Above 1 s
+      # means a model load or a queue, which the baseline would mostly drop.
+      - name: slow-first-token
+        type: ottl_condition
+        ottl_condition:
+          error_mode: ignore
+          span:
+            - span.attributes["gen_ai.response.time_to_first_chunk"] > 1.0
       - name: baseline
         type: probabilistic
         probabilistic:
