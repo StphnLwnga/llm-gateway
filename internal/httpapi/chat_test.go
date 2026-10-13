@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/goleak"
 
 	"github.com/StphnLwnga/llm-gateway/internal/fakeupstream"
@@ -69,6 +70,7 @@ type setup struct {
 	firstToken    time.Duration
 	stall         time.Duration
 	maxMax        *int
+	meter         metric.MeterProvider
 }
 
 type gateway struct {
@@ -99,8 +101,9 @@ func start(t *testing.T, s setup) gateway {
 	p = &provider.Watchdog{Name: "fake", Inner: p, FirstEvent: s.firstToken, Stall: s.stall}
 	logs := &syncBuffer{}
 	h := httpapi.New(slog.New(slog.NewJSONHandler(logs, nil)), httpapi.Deps{
-		Routes: resolver{"chat": {{ProviderName: "fake", Provider: p, UpstreamModel: s.upstreamModel, MaxMaxTokens: s.maxMax}}},
-		Chat:   httpapi.ChatConfig{StatusHold: s.hold, HeartbeatInterval: s.heartbeat, MaxBodyBytes: 4 << 10},
+		Routes:    resolver{"chat": {{ProviderName: "fake", Provider: p, UpstreamModel: s.upstreamModel, MaxMaxTokens: s.maxMax}}},
+		Chat:      httpapi.ChatConfig{StatusHold: s.hold, HeartbeatInterval: s.heartbeat, MaxBodyBytes: 4 << 10},
+		Telemetry: httpapi.Telemetry{Meter: s.meter},
 	})
 	return gateway{url: serve(t, h), logs: logs}
 }

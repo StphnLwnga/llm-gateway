@@ -56,6 +56,7 @@ type request struct {
 // response is one NDJSON line, or the whole non-streamed body. Ollama leaves
 // out a zero count or duration, so every metric is a pointer.
 type response struct {
+	Model   string `json:"model"`
 	Message struct {
 		Content string `json:"content"`
 		// Thinking is not forwarded; it only marks progress.
@@ -68,6 +69,7 @@ type response struct {
 	LoadDuration       *int64 `json:"load_duration"`
 	PromptEvalDuration *int64 `json:"prompt_eval_duration"`
 	EvalDuration       *int64 `json:"eval_duration"`
+	TotalDuration      *int64 `json:"total_duration"`
 	Error              string `json:"error"`
 }
 
@@ -126,7 +128,7 @@ func (a *Adapter) Chat(ctx context.Context, req provider.Request) (provider.Resp
 	if err != nil {
 		return provider.Response{}, err
 	}
-	return provider.Response{Content: r.Message.Content, Usage: usageOf(r), FinishReason: finish}, nil
+	return provider.Response{Content: r.Message.Content, Usage: usageOf(r), FinishReason: finish, Model: r.Model}, nil
 }
 
 // Stream sends a streamed request and calls fn once per event. The last line
@@ -153,7 +155,7 @@ func (a *Adapter) Stream(ctx context.Context, req provider.Request, fn func(prov
 			return err
 		}
 		if !r.Done {
-			ev := provider.Event{Delta: r.Message.Content, Progress: r.Message.Content == "" && r.Message.Thinking != ""}
+			ev := provider.Event{Delta: r.Message.Content, Model: r.Model, Progress: r.Message.Content == "" && r.Message.Thinking != ""}
 			if ev.Delta == "" && !ev.Progress {
 				continue
 			}
@@ -167,7 +169,7 @@ func (a *Adapter) Stream(ctx context.Context, req provider.Request, fn func(prov
 			return err
 		}
 		u := usageOf(r)
-		return fn(provider.Event{Delta: r.Message.Content, FinishReason: finish, Usage: &u})
+		return fn(provider.Event{Delta: r.Message.Content, FinishReason: finish, Usage: &u, Model: r.Model})
 	}
 	if err := sc.Err(); err != nil {
 		if errors.Is(err, bufio.ErrTooLong) {
@@ -218,8 +220,8 @@ func usageOf(r response) provider.Usage {
 	} else {
 		u.PromptTokensUnknown = true
 	}
-	t := provider.Timings{Load: nanos(r.LoadDuration), Prefill: nanos(r.PromptEvalDuration), Decode: nanos(r.EvalDuration)}
-	if t.Load != nil || t.Prefill != nil || t.Decode != nil {
+	t := provider.Timings{Load: nanos(r.LoadDuration), Prefill: nanos(r.PromptEvalDuration), Decode: nanos(r.EvalDuration), Total: nanos(r.TotalDuration)}
+	if t != (provider.Timings{}) {
 		u.Timings = &t
 	}
 	return u

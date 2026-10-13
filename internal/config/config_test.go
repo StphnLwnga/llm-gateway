@@ -69,6 +69,9 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	if cfg.OllamaBaseURL != "" {
 		t.Errorf("OllamaBaseURL = %q by default, want empty (Ollama disabled)", cfg.OllamaBaseURL)
 	}
+	if cfg.OTLPEndpoint != "" {
+		t.Errorf("OTLPEndpoint = %q by default, want empty (no telemetry export)", cfg.OTLPEndpoint)
+	}
 	if cfg.GroqBaseURL != "https://api.groq.com/openai/v1" || cfg.OpenAIBaseURL != "https://api.openai.com/v1" {
 		t.Errorf("GroqBaseURL, OpenAIBaseURL = %q, %q; want the public endpoints", cfg.GroqBaseURL, cfg.OpenAIBaseURL)
 	}
@@ -194,6 +197,28 @@ func TestLoadReadsProviderKeysAndBaseURLs(t *testing.T) {
 	}
 }
 
+func TestLoadReadsTheOTLPEndpoint(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name, value, want string
+	}{
+		{"set", "http://otel-collector:4318", "http://otel-collector:4318"},
+		{"empty, which the OTel SDK treats as not set", "", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			cfg, err := Load(env(map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": tc.value}))
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if cfg.OTLPEndpoint != tc.want {
+				t.Errorf("OTLPEndpoint = %q, want %q", cfg.OTLPEndpoint, tc.want)
+			}
+		})
+	}
+}
+
 func TestLoadRejectsInvalidSettings(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -232,6 +257,8 @@ func TestLoadRejectsInvalidSettings(t *testing.T) {
 		{"routes refresh interval not a duration", map[string]string{"ROUTES_REFRESH_INTERVAL": "often"}, "ROUTES_REFRESH_INTERVAL"},
 		{"ollama base url set but empty", map[string]string{"OLLAMA_BASE_URL": ""}, "OLLAMA_BASE_URL"},
 		{"ollama base url without a scheme", map[string]string{"OLLAMA_BASE_URL": "localhost:11434"}, "OLLAMA_BASE_URL"},
+		{"otlp endpoint without a scheme", map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "otel-collector:4318"}, "OTEL_EXPORTER_OTLP_ENDPOINT"},
+		{"otlp endpoint with a grpc scheme", map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "grpc://otel-collector:4317"}, "OTEL_EXPORTER_OTLP_ENDPOINT"},
 		{"openai base url set but empty", map[string]string{"OPENAI_BASE_URL": ""}, "OPENAI_BASE_URL"},
 		{"database url set but empty", map[string]string{"DATABASE_URL": ""}, "DATABASE_URL"},
 		{"max conns zero", map[string]string{"DB_MAX_CONNS": "0"}, "DB_MAX_CONNS"},

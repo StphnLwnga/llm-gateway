@@ -107,6 +107,7 @@ type summary struct {
 	Finish  []string
 	Usage   []provider.Usage // token counts only; timings are checked separately
 	Ordered bool             // no delta after the finish reason or the usage
+	Models  []string         // each distinct model the events named, in order
 }
 
 func summarize(evs []provider.Event) summary {
@@ -118,6 +119,9 @@ func summarize(evs []provider.Event) summary {
 			s.Ordered = false
 		}
 		text.WriteString(e.Delta)
+		if e.Model != "" && !slices.Contains(s.Models, e.Model) {
+			s.Models = append(s.Models, e.Model)
+		}
 		if e.FinishReason != "" {
 			s.Finish = append(s.Finish, e.FinishReason)
 			ended = true
@@ -150,25 +154,25 @@ func TestStreamFixtures(t *testing.T) {
 			// constructed from the OpenAI API reference, not recorded
 			"openai_stream_constructed.sse",
 			summary{Text: "Hello! How can I assist you today?", Finish: []string{"stop"},
-				Usage: []provider.Usage{{PromptTokens: 19, CompletionTokens: 10, TotalTokens: 29}}, Ordered: true},
+				Usage: []provider.Usage{{PromptTokens: 19, CompletionTokens: 10, TotalTokens: 29}}, Ordered: true, Models: []string{"gpt-6-astra"}},
 		},
 		{
 			// recorded from Groq: usage both under x_groq on the finish chunk and in the include_usage chunk
 			"groq_stream_recorded.sse",
 			summary{Text: "الأحمر، والأزرق، والأصفر ", Finish: []string{"stop"},
-				Usage: []provider.Usage{{PromptTokens: 16, CompletionTokens: 10, TotalTokens: 26}}, Ordered: true},
+				Usage: []provider.Usage{{PromptTokens: 16, CompletionTokens: 10, TotalTokens: 26}}, Ordered: true, Models: []string{"allam-2-7b"}},
 		},
 		{
 			// recorded from Groq (gpt-oss): every token is delta.reasoning, so no content reaches the caller
 			"groq_reasoning_stream_recorded.sse",
 			summary{Text: "", Finish: []string{"length"},
-				Usage: []provider.Usage{{PromptTokens: 79, CompletionTokens: 32, TotalTokens: 111}}, Ordered: true},
+				Usage: []provider.Usage{{PromptTokens: 79, CompletionTokens: 32, TotalTokens: 111}}, Ordered: true, Models: []string{"openai/gpt-oss-20b"}},
 		},
 		{
 			// constructed from the Groq API reference: usage only under x_groq, not recorded
 			"groq_stream_xgroq_constructed.sse",
 			summary{Text: "Low latency matters.", Finish: []string{"stop"},
-				Usage: []provider.Usage{{PromptTokens: 18, CompletionTokens: 4, TotalTokens: 22}}, Ordered: true},
+				Usage: []provider.Usage{{PromptTokens: 18, CompletionTokens: 4, TotalTokens: 22}}, Ordered: true, Models: []string{"groq-model"}},
 		},
 	}
 	for _, tc := range cases {
@@ -187,7 +191,8 @@ func TestStreamFixtures(t *testing.T) {
 }
 
 func equalSummary(a, b summary) bool {
-	return a.Text == b.Text && slices.Equal(a.Finish, b.Finish) && slices.Equal(a.Usage, b.Usage) && a.Ordered == b.Ordered
+	return a.Text == b.Text && slices.Equal(a.Finish, b.Finish) && slices.Equal(a.Usage, b.Usage) && a.Ordered == b.Ordered &&
+		slices.Equal(a.Models, b.Models)
 }
 
 func TestChatFixtures(t *testing.T) {
@@ -199,13 +204,13 @@ func TestChatFixtures(t *testing.T) {
 		{
 			// constructed from the OpenAI API reference example response, not recorded
 			"openai_chat_constructed.json",
-			provider.Response{Content: "Hello! How can I assist you today?", FinishReason: "stop",
+			provider.Response{Content: "Hello! How can I assist you today?", FinishReason: "stop", Model: "gpt-6-astra",
 				Usage: provider.Usage{PromptTokens: 19, CompletionTokens: 10, TotalTokens: 29}},
 		},
 		{
 			// recorded from Groq
 			"groq_chat_recorded.json",
-			provider.Response{Content: "الأحمر، والأزرق، والأصفر ", FinishReason: "stop",
+			provider.Response{Content: "الأحمر، والأزرق، والأصفر ", FinishReason: "stop", Model: "allam-2-7b",
 				Usage: provider.Usage{PromptTokens: 16, CompletionTokens: 10, TotalTokens: 26}},
 		},
 	}
@@ -357,14 +362,18 @@ func timings(u *provider.Usage) string {
 	if u == nil || u.Timings == nil {
 		return "none"
 	}
-	return fmt.Sprintf("queue=%s load=%s prefill=%s decode=%s", dur(u.Timings.Queue), dur(u.Timings.Load), dur(u.Timings.Prefill), dur(u.Timings.Decode))
+	return fmt.Sprintf("queue=%s load=%s prefill=%s decode=%s total=%s",
+		dur(u.Timings.Queue), dur(u.Timings.Load), dur(u.Timings.Prefill), dur(u.Timings.Decode), dur(u.Timings.Total))
 }
 
 func TestGroqTimingsAreConvertedFromSeconds(t *testing.T) {
 	t.Parallel()
 	cases := []struct{ file, want string }{
-		// recorded from Groq
-		{"groq_stream_recorded.sse", "queue=83.29193ms load=unset prefill=1.039105ms decode=7.396903ms"},
+		// recorded from Groq: the finish chunk has the usage in usage and in x_groq.usage
+		{"groq_stream_recorded.sse", "queue=83.29193ms load=unset prefill=1.039105ms decode=7.396903ms total=8.436008ms"},
+		{"groq_reasoning_stream_recorded.sse", "queue=214.856063ms load=unset prefill=3.997794ms decode=37.007061ms total=41.004855ms"},
+		// constructed from the Groq API reference: the usage only in x_groq.usage
+		{"groq_stream_xgroq_constructed.sse", "queue=10ms load=unset prefill=680.594µs decode=3.3ms total=4ms"},
 		// constructed from the OpenAI API reference: OpenAI reports no timings
 		{"openai_stream_constructed.sse", "none"},
 	}
@@ -395,7 +404,7 @@ func TestGroqTimingsAreConvertedFromSeconds(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Chat: %v", err)
 		}
-		if got, want := timings(&resp.Usage), "queue=88.860954ms load=unset prefill=1.035525ms decode=7.399842ms"; got != want {
+		if got, want := timings(&resp.Usage), "queue=88.860954ms load=unset prefill=1.035525ms decode=7.399842ms total=8.435367ms"; got != want {
 			t.Errorf("timings = %s, want %s", got, want)
 		}
 	})

@@ -87,6 +87,9 @@ type Config struct {
 
 	// RoutesRefreshInterval is how often the routes snapshot reloads from Postgres.
 	RoutesRefreshInterval time.Duration
+
+	// OTLPEndpoint turns on trace and metric export when set.
+	OTLPEndpoint string
 }
 
 // Addr is the listen address for the HTTP server.
@@ -190,6 +193,10 @@ func Load(lookup func(key string) (string, bool)) (Config, error) {
 	cfg.OpenAIBaseURL = baseURL("OPENAI_BASE_URL", "https://api.openai.com/v1")
 	if _, ok := lookup("OLLAMA_BASE_URL"); ok {
 		cfg.OllamaBaseURL = baseURL("OLLAMA_BASE_URL", "http://localhost:11434")
+	}
+	// The OTel SDK treats an empty value as not set.
+	if v, ok := lookup("OTEL_EXPORTER_OTLP_ENDPOINT"); ok && v != "" {
+		cfg.OTLPEndpoint = baseURL("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-collector:4318")
 	}
 
 	if v, ok := lookup("DATABASE_URL"); ok && v != "" {

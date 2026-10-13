@@ -68,7 +68,7 @@ func TestWatchdogFirstEventDeadline(t *testing.T) {
 	ended := make(chan error, 1)
 	began := time.Now()
 	err := watch(script{delays: []time.Duration{time.Second}, ended: ended}).Stream(t.Context(), Request{}, func(Event) error { return nil })
-	wantTimeout(t, err, errNoFirstEvent)
+	wantTimeout(t, err, ErrFirstTokenTimeout)
 	if d := time.Since(began); d > 500*time.Millisecond {
 		t.Errorf("returned after %v, want about 100ms", d)
 	}
@@ -82,7 +82,7 @@ func TestWatchdogStallDeadline(t *testing.T) {
 	n := 0
 	err := watch(script{delays: []time.Duration{10 * time.Millisecond, 10 * time.Millisecond, time.Second}}).
 		Stream(t.Context(), Request{}, func(Event) error { n++; return nil })
-	wantTimeout(t, err, errStalled)
+	wantTimeout(t, err, ErrStallTimeout)
 	if n != 2 {
 		t.Errorf("events before the stall = %d, want 2", n)
 	}

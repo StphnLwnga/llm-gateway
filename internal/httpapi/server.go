@@ -37,14 +37,17 @@ type Handler struct {
 	checks   []Checker
 	draining atomic.Bool
 	mux      *http.ServeMux
+	handler  http.Handler
+	metrics  chatMetrics
 }
 
 // Deps are the parts the handler serves from. A nil Models lists nothing,
 // and a nil Routes resolves nothing.
 type Deps struct {
-	Models ModelLister
-	Routes Resolver
-	Chat   ChatConfig
+	Models    ModelLister
+	Routes    Resolver
+	Chat      ChatConfig
+	Telemetry Telemetry
 }
 
 // New returns the gateway's handler; checks run on every GET /readyz.
@@ -62,11 +65,16 @@ func New(log *slog.Logger, deps Deps, checks ...Checker) *Handler {
 		h.mux.HandleFunc(rt.path, h.methodNotAllowed(rt.method))
 	}
 	h.mux.HandleFunc("/", h.notFound)
+	h.handler = instrument(h.mux, deps.Telemetry)
+	var err error
+	if h.metrics, err = newChatMetrics(deps.Telemetry.Meter); err != nil {
+		log.Warn("chat metrics are incomplete", "err", err)
+	}
 	return h
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	h.mux.ServeHTTP(w, r)
+	h.handler.ServeHTTP(w, r)
 }
 
 // StartDraining makes GET /readyz return 503.

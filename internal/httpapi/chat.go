@@ -54,14 +54,19 @@ type chatLog struct {
 	usage         *provider.Usage
 	truncated     bool
 	errKind       string
+	errType       string // error.type of a cut stream
 	clientGone    bool
+	firstVisible  time.Duration // to the first content written to the client; streams only
 }
 
 func (h *Handler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	rec := &chatLog{requestID: "req_" + randomHex(12)}
 	w.Header().Set("X-Request-Id", rec.requestID)
-	defer h.logChat(r.Context(), rec, start)
+	defer func() {
+		h.recordChat(r.Context(), rec)
+		h.logChat(r.Context(), rec, start)
+	}()
 
 	r.Body = http.MaxBytesReader(w, r.Body, h.chat.MaxBodyBytes)
 	var in chatRequest
@@ -180,13 +185,16 @@ func (h *Handler) stream(w http.ResponseWriter, r *http.Request, t Target, preq 
 				stop()
 				return
 			}
+			if e.Delta != "" && rec.firstVisible == 0 {
+				rec.firstVisible = time.Since(start)
+			}
 		case err := <-done:
 			if err != nil {
 				if r.Context().Err() != nil {
 					rec.clientGone = true
 					return
 				}
-				h.streamError(w, out, err, committed, rec)
+				h.streamError(r.Context(), w, out, err, committed, rec)
 				return
 			}
 			if !committed {
@@ -226,10 +234,10 @@ func (h *Handler) stream(w http.ResponseWriter, r *http.Request, t Target, preq 
 // streamError reports an upstream error: as a real status before the commit,
 // or as an error event after it. An error event is not followed by [DONE],
 // so a client cannot mistake a cut answer for a complete one.
-func (h *Handler) streamError(w http.ResponseWriter, out *sse.Writer, err error, committed bool, rec *chatLog) {
+func (h *Handler) streamError(ctx context.Context, w http.ResponseWriter, out *sse.Writer, err error, committed bool, rec *chatLog) {
 	status, body, retryAfter := upstreamError(err)
 	rec.errKind = errKind(err)
-	h.log.Warn("upstream error", "request_id", rec.requestID, "provider", rec.provider, "err", err)
+	h.log.WarnContext(ctx, "upstream error", "request_id", rec.requestID, "provider", rec.provider, "err", err)
 	if !committed {
 		rec.status, rec.committedBy = status, "error"
 		if retryAfter != "" {
@@ -238,7 +246,7 @@ func (h *Handler) streamError(w http.ResponseWriter, out *sse.Writer, err error,
 		writeAPIError(w, status, body)
 		return
 	}
-	rec.truncated = true
+	rec.truncated, rec.errType = true, provider.ErrorType(err)
 	if werr := out.Event(errorEnvelope{Error: body}); werr != nil {
 		rec.clientGone = true
 	}
@@ -273,7 +281,7 @@ func (h *Handler) aggregate(w http.ResponseWriter, r *http.Request, t Target, pr
 		}
 		status, body, retryAfter := upstreamError(err)
 		rec.status, rec.errKind = status, errKind(err)
-		h.log.Warn("upstream error", "request_id", rec.requestID, "provider", rec.provider, "err", err)
+		h.log.WarnContext(r.Context(), "upstream error", "request_id", rec.requestID, "provider", rec.provider, "err", err)
 		if retryAfter != "" {
 			w.Header().Set("Retry-After", retryAfter)
 		}

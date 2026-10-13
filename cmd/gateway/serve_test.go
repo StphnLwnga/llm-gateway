@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,22 +18,30 @@ import (
 // gateway is a running serve call on a loopback port, with a slow route added.
 type gateway struct {
 	url     string
+	logs    *syncBuffer
+	slowEnd atomic.Bool        // set when a /slow handler has written its response
 	cancel  context.CancelFunc // sends the "signal"
 	done    chan error         // serve's return value
 	started chan struct{}      // receives once per /slow request that has begun
 }
 
-// startGateway adds GET /slow, which takes slowFor, or waits for release when slowFor is 0.
-func startGateway(t *testing.T, slowFor time.Duration, release <-chan struct{}, drainDelay, shutdownTimeout time.Duration) *gateway {
+// startGateway adds GET /slow, which takes slowFor, or waits for release when
+// slowFor is 0. A nil flush flushes nothing.
+func startGateway(t *testing.T, slowFor time.Duration, release <-chan struct{}, drainDelay, shutdownTimeout time.Duration,
+	flush func(context.Context) error) *gateway {
 	t.Helper()
 	var lc net.ListenConfig
 	ln, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	log := slog.New(slog.DiscardHandler)
+	logs := &syncBuffer{}
+	log := slog.New(slog.NewJSONHandler(logs, nil))
 	api := httpapi.New(log, httpapi.Deps{})
-	g := &gateway{url: "http://" + ln.Addr().String(), done: make(chan error, 1), started: make(chan struct{}, 4)}
+	g := &gateway{url: "http://" + ln.Addr().String(), logs: logs, done: make(chan error, 1), started: make(chan struct{}, 4)}
+	if flush == nil {
+		flush = func(context.Context) error { return nil }
+	}
 
 	mux := http.NewServeMux()
 	mux.Handle("/", api)
@@ -50,12 +60,13 @@ func startGateway(t *testing.T, slowFor time.Duration, release <-chan struct{}, 
 			return
 		}
 		_, _ = io.WriteString(w, "finished")
+		g.slowEnd.Store(true)
 	})
 
 	ctx, cancel := context.WithCancel(t.Context())
 	g.cancel = cancel
 	go func() {
-		g.done <- serve(ctx, log, ln, httpapi.NewServer("", mux), api.StartDraining, drainDelay, shutdownTimeout)
+		g.done <- serve(ctx, log, ln, httpapi.NewServer("", mux), api.StartDraining, drainDelay, shutdownTimeout, flush)
 	}()
 	t.Cleanup(cancel)
 	return g
@@ -83,7 +94,7 @@ func (g *gateway) wait(t *testing.T, within time.Duration) error {
 
 func TestInFlightRequestFinishesDuringShutdown(t *testing.T) {
 	t.Parallel()
-	g := startGateway(t, 300*time.Millisecond, nil, 0, 5*time.Second)
+	g := startGateway(t, 300*time.Millisecond, nil, 0, 5*time.Second, nil)
 
 	type result struct {
 		status int
@@ -116,7 +127,7 @@ func TestInFlightRequestFinishesDuringShutdown(t *testing.T) {
 
 func TestReadyzIs503DuringTheDrainDelay(t *testing.T) {
 	t.Parallel()
-	g := startGateway(t, 0, nil, 2*time.Second, 5*time.Second)
+	g := startGateway(t, 0, nil, 2*time.Second, 5*time.Second, nil)
 
 	resp, err := g.get(t, "/readyz")
 	if err != nil {
@@ -152,7 +163,7 @@ func TestReadyzIs503DuringTheDrainDelay(t *testing.T) {
 func TestShutdownTimeoutReturnsADeadlineError(t *testing.T) {
 	t.Parallel()
 	release := make(chan struct{}) // never closed: the request outlives the timeout
-	g := startGateway(t, 0, release, 0, 100*time.Millisecond)
+	g := startGateway(t, 0, release, 0, 100*time.Millisecond, nil)
 
 	go func() {
 		if resp, err := g.get(t, "/slow"); err == nil {
@@ -165,5 +176,48 @@ func TestShutdownTimeoutReturnsADeadlineError(t *testing.T) {
 	err := g.wait(t, 5*time.Second)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("serve returned %v, want a context.DeadlineExceeded error", err)
+	}
+}
+
+func TestTelemetryFlushesAfterTheServerStopsAndAFailureOnlyLogs(t *testing.T) {
+	t.Parallel()
+	type call struct {
+		requestDone bool
+		deadline    time.Time
+		hasDeadline bool
+	}
+	calls := make(chan call, 2)
+	var g *gateway
+	flush := func(ctx context.Context) error {
+		d, ok := ctx.Deadline()
+		calls <- call{requestDone: g.slowEnd.Load(), deadline: d, hasDeadline: ok}
+		return errors.New("collector unreachable")
+	}
+	g = startGateway(t, 200*time.Millisecond, nil, 0, 5*time.Second, flush)
+
+	go func() {
+		if resp, err := g.get(t, "/slow"); err == nil {
+			_ = resp.Body.Close()
+		}
+	}()
+	<-g.started
+	signalled := time.Now()
+	g.cancel()
+
+	if err := g.wait(t, 5*time.Second); err != nil {
+		t.Errorf("serve returned %v, want nil: a failed flush must not fail the shutdown", err)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("flush was called %d times, want 1", len(calls))
+	}
+	c := <-calls
+	if !c.requestDone {
+		t.Error("flush ran before the in-flight request finished, want it after the server stops")
+	}
+	if !c.hasDeadline || c.deadline.After(signalled.Add(5*time.Second+time.Second)) {
+		t.Errorf("flush context deadline = %v (set %v), want inside the shutdown timeout", c.deadline, c.hasDeadline)
+	}
+	if !strings.Contains(g.logs.String(), "telemetry flush failed") {
+		t.Errorf("logs do not report the failed flush:\n%s", g.logs.String())
 	}
 }

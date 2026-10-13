@@ -9,7 +9,7 @@ make up                              # build the image; start Postgres, run migr
 curl -i localhost:8080/readyz        # 200 {"status":"ready"} once Postgres answers
 make logs                            # follow the gateway's logs
 make migrate-status                  # list migrations and whether each is applied
-make down                            # stop the stack; the Postgres volume is kept
+make down                            # stop the stack, with or without the observability services; volumes are kept
 ```
 
 Provider keys go in a `.env` file at the repo root, for example `GROQ_API_KEY=...`. Compose passes the file to the gateway if it exists. Git ignores the file, and the image never contains it. Compose points `OLLAMA_BASE_URL` at Ollama on the host (`http://host.docker.internal:11434`).
@@ -17,6 +17,64 @@ Provider keys go in a `.env` file at the repo root, for example `GROQ_API_KEY=..
 Migrations run as a separate one-shot step (`gatewayctl migrate up`), never when the gateway starts. The gateway starts even when Postgres is down. `/readyz` returns 503 until Postgres answers.
 
 The [configuration page](configuration.md) lists every setting.
+
+## Observability stack
+
+`make up-obs` starts the same stack plus an OpenTelemetry Collector, Prometheus, Tempo and Grafana, from `deploy/compose.observability.yaml`. It sets `OTEL_EXPORTER_OTLP_ENDPOINT` on the gateway, so the gateway exports its traces and metrics to the collector. `make up` leaves them out, and the gateway then exports nothing. The [observability page](observability.md) lists the spans and metrics.
+
+```text
+ gateway ──OTLP/HTTP──> collector ──metrics──> Prometheus
+                            └──────traces───> Tempo
+                                Grafana queries both
+```
+
+| Service | Address on the host | Notes |
+|---|---|---|
+| Grafana | http://localhost:3300 | User `admin`, password `grafana-local`, or `GRAFANA_ADMIN_PASSWORD` when it is set. Prometheus and Tempo are provisioned as data sources. `GF_SERVER_ROOT_URL` must match the host port, or share links point to the wrong port. |
+| Prometheus | http://localhost:9090 | Receives the collector's metrics over OTLP, and scrapes the collector's own metrics |
+| Tempo | http://localhost:3200 | Trace queries |
+| Collector | http://localhost:4318 | OTLP/HTTP, for a gateway run on the host: `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 go run ./cmd/gateway` |
+
+Every port is bound to 127.0.0.1. The collector, Prometheus and Tempo have no authentication, and Grafana uses a local default password. Prometheus and Tempo keep 7 days of data in named volumes, so `make down` keeps them.
+
+The collector tail-samples traces. It keeps every trace with an error, every trace longer than 30 s, every trace with a first chunk slower than 1 s, and 10% of the rest. `TRACE_SAMPLE_PERCENT=100 make up-obs` keeps every trace ([observability](observability.md#genai-span)). It decides 5 s after a trace's root span arrives, and at most 300 s after its first span. A request that continues a client's trace has no root span in this collector, so its trace waits the full 300 s. Most traces of successful requests never reach Tempo, and a kept trace is searchable in Tempo up to about 30 s later. Metrics are not sampled. The configs are in `deploy/observability/`.
+
+To check the stack without the gateway, send test data with telemetrygen:
+
+```bash
+TG=ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:v0.162.0@sha256:5350f77dbc914034321dc7629058e141996c8dc2cdde076d281e573efee1a67e
+docker run --rm --network llm-gateway_default "$TG" traces --otlp-endpoint otel-collector:4318 --otlp-http --otlp-insecure --traces 5 --status-code Error
+```
+
+A config file mounted into a container must exist before `make up-obs`. When the host file is missing, Docker creates an empty directory in its place, and the service fails later with an error such as "is a directory". `test -f` on each mounted file catches it first.
+
+### Dashboards
+
+Grafana loads two dashboards from `deploy/observability/grafana/dashboards/` into the folder `llm-gateway`:
+
+| Dashboard | Address | Shows |
+|---|---|---|
+| Gateway | http://localhost:3300/d/llm-gateway | Requests by route, provider calls, and stream outcomes that the status code cannot show |
+| Telemetry pipeline | http://localhost:3300/d/llm-gateway-pipeline | The collector: spans in and refused, sampling decisions, export queues, send failures and memory |
+
+The files are the source. The UI cannot save over them. Grafana has no volume, so anything saved only in the UI is lost when the container is recreated. Alert rules come with milestone 4.
+
+The panels use `$__rate_interval`, which is at least 1 minute here. `make up-obs` makes the gateway export metrics every 15 s (`OTEL_METRIC_EXPORT_INTERVAL`), the same as the Prometheus scrape interval, and the data source sets `timeInterval: 15s` to match. A shorter export interval than the SDK default of 60 s keeps short load steps visible.
+
+To change a dashboard:
+
+1. Load the file into Grafana as a draft with another uid:
+   ```bash
+   python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); d["uid"]="draft-"+d["uid"]; d["title"]+=" draft"; print(json.dumps({"dashboard":d,"overwrite":True}))' \
+     deploy/observability/grafana/dashboards/gateway.json \
+     | curl -s -u admin:grafana-local -H 'Content-Type: application/json' localhost:3300/api/dashboards/db -d @-
+   ```
+2. Edit the draft in the UI, and save it.
+3. Export it: **Export**, **Export as code**, **Advanced options**, **Model: Classic**. Keep **Export for sharing externally** off, so the data source uids stay `prometheus` and `tempo`.
+4. In a file outside the dashboards folder, remove the top-level `id` and `version`, and set `uid` and `title` back to the old values. Grafana reads the folder every 10 s, so a half-edited file there goes live.
+5. Move the file over the old one. Then delete the draft: `curl -s -u admin:grafana-local -X DELETE localhost:3300/api/dashboards/uid/draft-<uid>`.
+
+A provisioned dashboard cannot be exported after an edit. Grafana asks you to save it first, and the JSON it offers instead uses the V2 schema.
 
 ## Tests
 
@@ -62,7 +120,8 @@ Actions are pinned by commit SHA. Dependabot proposes updates to actions and Go 
 | `make build` | Builds both binaries into `bin/` |
 | `make test` | Runs every test, the integration tests included (needs Docker) |
 | `make up` | Builds the image and starts Postgres, the migration and the gateway |
-| `make down` | Stops the stack; the Postgres volume is kept |
+| `make up-obs` | Like `make up`, plus the collector, Prometheus, Tempo and Grafana; the gateway exports to the collector |
+| `make down` | Stops the stack, with or without the observability services; volumes are kept |
 | `make logs` | Follows the gateway's logs |
 | `make migrate-status` | Shows which migrations are applied |
 | `make loadtest` | Measures the latency the gateway adds, against the fake provider ([benchmarks](benchmarks.md)) |

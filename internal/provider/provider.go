@@ -45,6 +45,9 @@ type Timings struct {
 	Load    *time.Duration
 	Prefill *time.Duration
 	Decode  *time.Duration
+	// Total is the provider's own total, which each provider bounds
+	// differently: Groq's leaves out the queue, Ollama's includes the load.
+	Total *time.Duration
 }
 
 // Event is one step of a streamed answer: a text delta, the final usage, the
@@ -53,6 +56,7 @@ type Event struct {
 	Delta        string
 	Usage        *Usage
 	FinishReason string
+	Model        string // the model the upstream says answered; empty when it does not say
 
 	// Progress marks an event with no content: the model is working, for
 	// example reasoning, so a liveness deadline can reset.
@@ -64,6 +68,7 @@ type Response struct {
 	Content      string
 	Usage        Usage
 	FinishReason string
+	Model        string // the model the upstream says answered; empty when it does not say
 }
 
 // Provider is an upstream model API.

@@ -1,0 +1,82 @@
+# Adds the observability stack to compose.yaml (make up-obs). Relative paths
+# resolve from deploy/, the directory of the first Compose file.
+
+services:
+  gateway:
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      # Milliseconds. The same as the Prometheus scrape interval, so rate() windows can be 1 minute.
+      OTEL_METRIC_EXPORT_INTERVAL: "15000"
+    depends_on:
+      otel-collector:
+        condition: service_started
+
+  otel-collector:
+    depends_on:
+      prometheus:
+        condition: service_started
+      tempo:
+        condition: service_started
+    image: otel/opentelemetry-collector-contrib:0.162.0@sha256:39923a8e431bd1f57be82411999d389fcfe40857492e4365456d97a4c1f74be6
+    volumes:
+      - ./observability/otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+    environment:
+      # About 80% of mem_limit, so Go collects garbage before the kernel kills it.
+      GOMEMLIMIT: 400MiB
+      TRACE_SAMPLE_PERCENT: ${TRACE_SAMPLE_PERCENT:-10}
+    ports:
+      # For a gateway run on the host with go run. The receiver has no auth.
+      - "127.0.0.1:4318:4318"
+    mem_limit: 512m
+
+  prometheus:
+    image: prom/prometheus:v3.15.0@sha256:efd719c99d83b060d9daefdcf00360461adf279f45ef5391f8d111892118753e
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-otlp-receiver
+      - --enable-feature=exemplar-storage
+    volumes:
+      - ./observability/prometheus.yaml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    mem_limit: 512m
+
+  tempo:
+    image: grafana/tempo:3.1.0@sha256:3076b8dcdfb32fd6bc5ccef85e7b7313e6199b9cb84366257fc17ecb696db5fd
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./observability/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    ports:
+      - "127.0.0.1:3200:3200"
+    mem_limit: 512m
+
+  grafana:
+    image: grafana/grafana:13.2.3@sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-grafana-local}
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      # Plugins come from the pinned image only, never downloaded at start-up.
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      # Links that Grafana builds, such as share links, use this address, not the container's port.
+      GF_SERVER_ROOT_URL: http://localhost:3300/
+    volumes:
+      - ./observability/grafana/datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
+      - ./observability/grafana/dashboards.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "127.0.0.1:3300:3000"
+    depends_on:
+      prometheus:
+        condition: service_started
+      tempo:
+        condition: service_started
+    mem_limit: 512m
+
+volumes:
+  prometheus-data:
+  tempo-data:

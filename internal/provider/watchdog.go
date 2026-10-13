@@ -19,9 +19,11 @@ type Watchdog struct {
 	Stall      time.Duration
 }
 
+// The passed deadline. A watchdog timeout wraps one, so errors.Is tells a
+// slow first token from a stalled stream.
 var (
-	errNoFirstEvent = errors.New("no event before the first-token deadline")
-	errStalled      = errors.New("no event within the stall deadline")
+	ErrFirstTokenTimeout = errors.New("no event before the first-token deadline")
+	ErrStallTimeout      = errors.New("no event within the stall deadline")
 )
 
 // Chat calls the inner provider unchanged.
@@ -38,9 +40,9 @@ func (w *Watchdog) Stream(ctx context.Context, req Request, fn func(Event) error
 	var seen atomic.Bool
 	timer := time.AfterFunc(w.FirstEvent, func() {
 		if seen.Load() {
-			cancel(errStalled)
+			cancel(ErrStallTimeout)
 		} else {
-			cancel(errNoFirstEvent)
+			cancel(ErrFirstTokenTimeout)
 		}
 	})
 	defer timer.Stop()
@@ -56,14 +58,14 @@ func (w *Watchdog) Stream(ctx context.Context, req Request, fn func(Event) error
 	if err == nil || ctx.Err() != nil {
 		return err
 	}
-	if cause := context.Cause(inner); errors.Is(cause, errNoFirstEvent) || errors.Is(cause, errStalled) {
+	if cause := context.Cause(inner); errors.Is(cause, ErrFirstTokenTimeout) || errors.Is(cause, ErrStallTimeout) {
 		return &Error{Provider: w.Name, Kind: KindTimeout, Err: fmt.Errorf("%w (%s)", cause, w.limit(cause))}
 	}
 	return err
 }
 
 func (w *Watchdog) limit(cause error) time.Duration {
-	if errors.Is(cause, errNoFirstEvent) {
+	if errors.Is(cause, ErrFirstTokenTimeout) {
 		return w.FirstEvent
 	}
 	return w.Stall

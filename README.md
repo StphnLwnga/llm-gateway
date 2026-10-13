@@ -42,23 +42,28 @@ The gateway takes the OpenAI request shape, so an OpenAI SDK needs only a new ba
 │   ├── sse/                 the Server-Sent Events writer and heartbeats
 │   ├── store/
 │   │   └── postgres/        the connection pool, readiness check, migrations, routes table
-│   └── telemetry/           the structured logger
+│   └── telemetry/           the structured logger, with trace IDs
+│       └── otelsdk/         OpenTelemetry tracer and meter providers, exported over OTLP/HTTP
 ├── deploy/
 │   ├── docker/
 │   │   └── Dockerfile       distroless, non-root images for the gateway and the fake provider
+│   ├── observability/       collector, Prometheus, Tempo and Grafana configs, and the dashboards
 │   ├── compose.yaml         the local stack: Postgres, migrations, gateway
+│   ├── compose.observability.yaml adds the observability stack
 │   └── compose.loadtest.yaml the overhead test stack
 ├── docs/
 │   ├── design.md            the system design and roadmap
 │   ├── adr/                 architecture decision records
 │   ├── api.md               endpoints, errors, chat completions, routes
 │   ├── configuration.md     every setting
+│   ├── observability.md     traces, metrics and log correlation
 │   ├── fake-provider.md     the fake provider and its fault modes
-│   ├── benchmarks.md        the overhead test: method and full results
+│   ├── benchmarks.md        the overhead and local model tests: method and full results
 │   └── development.md       running locally, shutdown, CI
 ├── loadtests/
 │   ├── k6/
-│   │   └── overhead.js      one overhead case
+│   │   ├── overhead.js      one overhead case
+│   │   └── ollama-ttft.js   streamed requests to a local model, at a fixed concurrency
 │   └── run.sh               runs every overhead case and prints the tables
 ├── .github/                 CI workflow, Dependabot, pull request template
 ├── .golangci.yml            lint settings
@@ -100,8 +105,9 @@ curl -N localhost:8080/v1/chat/completions \
 | Peak gateway memory under load | 69 MiB | Whole overhead run, 128 MiB limit, 2026-10-12 |
 | Image size, compressed | 8.17 MB | `docker save` with gzip, 2026-10-12 |
 | Cold start to ready | 179 to 185 ms | Container start to the first `/readyz` 200, 3 runs, 2026-10-12 |
+| Time to first token, local model | 0.45 s p50 warm, 1.29 s p50 memory-cold | `llama3.2:3b` in Ollama, Apple M4, 1 user, 2026-10-14 |
 
-Method, full tables and the connection-pool finding: [docs/benchmarks.md](docs/benchmarks.md).
+Method, full tables, the connection-pool finding and the local model under load: [docs/benchmarks.md](docs/benchmarks.md).
 
 ## Design
 
@@ -112,9 +118,10 @@ Method, full tables and the connection-pool finding: [docs/benchmarks.md](docs/b
 
 ```bash
 make up              # build the image; start Postgres, run migrations, start the gateway
+make up-obs          # the same, plus the collector, Prometheus, Tempo and Grafana (localhost:3300)
 make logs            # follow the gateway's logs
 make migrate-status  # list migrations and whether each is applied
-make down            # stop the stack; the Postgres volume is kept
+make down            # stop the stack; volumes are kept
 make test            # run every test; the Postgres tests need Docker
 make build           # build both binaries into bin/
 make loadtest        # run the overhead test (about 18 minutes)
@@ -123,4 +130,4 @@ make loadtest-down   # remove the overhead test stack and its volume
 
 CI runs lint, the race-enabled tests, a vulnerability scan and an image build on every pull request and every push to main.
 
-Reference: [configuration](docs/configuration.md), [API and routes](docs/api.md), [fake provider](docs/fake-provider.md), [benchmarks](docs/benchmarks.md), [development and CI](docs/development.md).
+Reference: [configuration](docs/configuration.md), [API and routes](docs/api.md), [observability](docs/observability.md), [fake provider](docs/fake-provider.md), [benchmarks](docs/benchmarks.md), [development and CI](docs/development.md).

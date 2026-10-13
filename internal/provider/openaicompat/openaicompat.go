@@ -80,12 +80,13 @@ type usage struct {
 	QueueTime      *float64 `json:"queue_time"`
 	PromptTime     *float64 `json:"prompt_time"`
 	CompletionTime *float64 `json:"completion_time"`
+	TotalTime      *float64 `json:"total_time"`
 }
 
 func (u usage) toProvider() provider.Usage {
 	out := provider.Usage{PromptTokens: u.PromptTokens, CompletionTokens: u.CompletionTokens, TotalTokens: u.TotalTokens}
-	t := provider.Timings{Queue: seconds(u.QueueTime), Prefill: seconds(u.PromptTime), Decode: seconds(u.CompletionTime)}
-	if t.Queue != nil || t.Prefill != nil || t.Decode != nil {
+	t := provider.Timings{Queue: seconds(u.QueueTime), Prefill: seconds(u.PromptTime), Decode: seconds(u.CompletionTime), Total: seconds(u.TotalTime)}
+	if t != (provider.Timings{}) {
 		out.Timings = &t
 	}
 	return out
@@ -104,6 +105,7 @@ type apiError struct {
 }
 
 type chatResponse struct {
+	Model   string `json:"model"`
 	Choices []struct {
 		Message struct {
 			Content string `json:"content"`
@@ -114,6 +116,7 @@ type chatResponse struct {
 }
 
 type chunk struct {
+	Model   string `json:"model"`
 	Choices []struct {
 		Delta struct {
 			Content   string `json:"content"`
@@ -190,7 +193,7 @@ func (a *Adapter) Chat(ctx context.Context, req provider.Request) (provider.Resp
 	if len(out.Choices) == 0 {
 		return provider.Response{}, provider.MalformedError(a.name, errors.New("response has no choices"))
 	}
-	r := provider.Response{Content: out.Choices[0].Message.Content, FinishReason: out.Choices[0].FinishReason}
+	r := provider.Response{Content: out.Choices[0].Message.Content, FinishReason: out.Choices[0].FinishReason, Model: out.Model}
 	if out.Usage != nil {
 		r.Usage = out.Usage.toProvider()
 	}
@@ -275,7 +278,7 @@ func (a *Adapter) parse(payload string) (provider.Event, *usage, error) {
 	if c.XGroq != nil && c.XGroq.Error != "" {
 		return provider.Event{}, nil, &provider.Error{Provider: a.name, StatusCode: http.StatusOK, Kind: provider.KindUpstreamUnavailable, Err: errors.New(c.XGroq.Error)}
 	}
-	var ev provider.Event
+	ev := provider.Event{Model: c.Model}
 	if len(c.Choices) > 0 {
 		ev.Delta = c.Choices[0].Delta.Content
 		ev.Progress = ev.Delta == "" && c.Choices[0].Delta.Reasoning != ""
