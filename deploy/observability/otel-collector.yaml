@@ -32,7 +32,8 @@ processors:
       - name: baseline
         type: probabilistic
         probabilistic:
-          sampling_percentage: 10
+          # 10 normally; TRACE_SAMPLE_PERCENT=100 keeps every trace for experiments.
+          sampling_percentage: ${env:TRACE_SAMPLE_PERCENT:-10}
   batch: {}
 
 exporters:

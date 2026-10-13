@@ -23,6 +23,7 @@ services:
     environment:
       # About 80% of mem_limit, so Go collects garbage before the kernel kills it.
       GOMEMLIMIT: 400MiB
+      TRACE_SAMPLE_PERCENT: ${TRACE_SAMPLE_PERCENT:-10}
     ports:
       # For a gateway run on the host with go run. The receiver has no auth.
       - "127.0.0.1:4318:4318"
