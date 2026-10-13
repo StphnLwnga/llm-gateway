@@ -13,3 +13,6 @@ coverage.html
 
 # Load test output
 loadtests/results/
+
+# macOS
+.DS_Store
