@@ -5,6 +5,8 @@ services:
   gateway:
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      # Milliseconds. The same as the Prometheus scrape interval, so rate() windows can be 1 minute.
+      OTEL_METRIC_EXPORT_INTERVAL: "15000"
     depends_on:
       otel-collector:
         condition: service_started
@@ -59,8 +61,12 @@ services:
       GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
       # Plugins come from the pinned image only, never downloaded at start-up.
       GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      # Links that Grafana builds, such as share links, use this address, not the container's port.
+      GF_SERVER_ROOT_URL: http://localhost:3300/
     volumes:
       - ./observability/grafana/datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
+      - ./observability/grafana/dashboards.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
       - "127.0.0.1:3300:3000"
     depends_on:

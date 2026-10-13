@@ -15,6 +15,7 @@ datasources:
       httpMethod: POST
       prometheusType: Prometheus
       prometheusVersion: 3.15.0
+      # The gateway exports metrics every 15 s (OTEL_METRIC_EXPORT_INTERVAL), the same as the scrape interval.
       timeInterval: 15s
       exemplarTraceIdDestinations:
         - name: trace_id
