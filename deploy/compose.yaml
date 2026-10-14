@@ -10,22 +10,25 @@ x-gateway-image: &gateway-image
     args:
       VERSION: ${VERSION:-dev}
 
-x-database-url: &database-url
-  DATABASE_URL: postgres://gateway:${POSTGRES_PASSWORD:-gateway-local}@postgres:5432/gateway?sslmode=disable
-
 services:
   postgres:
     image: pgvector/pgvector:0.8.7-pg18-trixie
     environment:
-      POSTGRES_USER: gateway
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gateway-local}
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres-local}
       POSTGRES_DB: gateway
+      MIGRATOR_PASSWORD: ${MIGRATOR_PASSWORD:-migrator-local}
+      APP_PASSWORD: ${APP_PASSWORD:-app-local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin-local}
     volumes:
       # Postgres 18 keeps data in /var/lib/postgresql/18/docker. A volume on the
       # old /var/lib/postgresql/data path makes the entrypoint refuse to start.
       - pgdata:/var/lib/postgresql
+      - ./postgres/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U gateway -d gateway"]
+      # TCP, not the socket: during init a temporary server listens on
+      # the socket only, and the socket check would pass too early.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d gateway"]
       interval: 2s
       timeout: 2s
       retries: 15
@@ -36,11 +39,24 @@ services:
     entrypoint: ["/usr/local/bin/gatewayctl"]
     command: ["migrate", "up"]
     environment:
-      <<: *database-url
+      DATABASE_URL: postgres://gateway_migrator:${MIGRATOR_PASSWORD:-migrator-local}@postgres:5432/gateway?sslmode=disable
       LOG_FORMAT: text
     depends_on:
       postgres:
         condition: service_healthy
+    restart: "no"
+    mem_limit: 64m
+
+  gatewayctl:
+    <<: *gateway-image
+    entrypoint: ["/usr/local/bin/gatewayctl"]
+    profiles: ["tools"]
+    environment:
+      DATABASE_URL: postgres://gateway_admin:${ADMIN_PASSWORD:-admin-local}@postgres:5432/gateway?sslmode=disable
+      LOG_FORMAT: text
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     restart: "no"
     mem_limit: 64m
 
@@ -51,7 +67,7 @@ services:
       - path: ../.env
         required: false
     environment:
-      <<: *database-url
+      DATABASE_URL: postgres://gateway_app:${APP_PASSWORD:-app-local}@postgres:5432/gateway?sslmode=disable
       LOG_FORMAT: text
       LOG_LEVEL: ${LOG_LEVEL:-info}
       DB_MAX_CONNS: ${DB_MAX_CONNS:-10}
