@@ -15,6 +15,8 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	semconv "go.opentelemetry.io/otel/semconv/v1.43.0"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/StphnLwnga/llm-gateway/internal/tenant"
 )
 
 // The GenAI names follow open-telemetry/semantic-conventions-genai at commit
@@ -196,6 +198,9 @@ func (g *GenAI) start(ctx context.Context, req Request, stream bool) *call {
 	spanAttrs := slices.Clone(attrs)
 	if stream {
 		spanAttrs = append(spanAttrs, attribute.Bool(attrRequestStream, true))
+	}
+	if id, ok := tenant.FromContext(ctx); ok {
+		spanAttrs = append(spanAttrs, attribute.String(tenant.SpanAttribute, id.TenantID))
 	}
 	began := time.Now()
 	// The span and its attributes exist before the call, so a sampler can use them.

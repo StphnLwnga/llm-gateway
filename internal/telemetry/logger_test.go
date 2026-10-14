@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+
+	"github.com/StphnLwnga/llm-gateway/internal/tenant"
 )
 
 func TestLoggerDropsRecordsBelowItsLevel(t *testing.T) {
@@ -107,5 +109,30 @@ func TestLogLineInsideASpanCarriesTheTraceAndSpanIDs(t *testing.T) {
 	}
 	if _, ok := outside["trace_id"]; ok {
 		t.Errorf("log outside a span has trace_id %v, want none", outside["trace_id"])
+	}
+}
+
+func TestLoggerAddsTheCallersTenantAndKey(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	log := NewLogger(&buf, slog.LevelInfo, "json")
+	ctx := tenant.WithIdentity(context.Background(), tenant.Identity{TenantID: "t-1", KeyID: "k-1"})
+
+	log.InfoContext(ctx, "with caller")
+	log.InfoContext(context.Background(), "without caller")
+
+	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	var with, without map[string]any
+	if err := json.Unmarshal([]byte(lines[0]), &with); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(lines[1]), &without); err != nil {
+		t.Fatal(err)
+	}
+	if with["tenant_id"] != "t-1" || with["key_id"] != "k-1" {
+		t.Errorf("record with a caller = %v, want tenant_id t-1 and key_id k-1", with)
+	}
+	if _, ok := without["tenant_id"]; ok {
+		t.Errorf("record without a caller has a tenant_id: %v", without)
 	}
 }

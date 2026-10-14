@@ -17,6 +17,8 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/StphnLwnga/llm-gateway/internal/tenant"
 )
 
 // step is one thing a scripted upstream does after a delay: send an event or fail.
@@ -236,6 +238,27 @@ func TestTheResponseModelNeverReachesMetrics(t *testing.T) {
 			for k, v := range attrMap(set.ToSlice()) {
 				if k == "gen_ai.response.model" || strings.Contains(v, "served-model") {
 					t.Errorf("%s carries %s = %q; an upstream chooses that value, so it is unbounded", name, k, v)
+				}
+			}
+		}
+	}
+}
+
+func TestTheTenantIsOnTheSpanButNeverOnAMetric(t *testing.T) {
+	t.Parallel()
+	r := observe(t, steps{{after: time.Millisecond, event: Event{Delta: "a", Model: "m"}}})
+	ctx := tenant.WithIdentity(t.Context(), tenant.Identity{TenantID: "tenant-7f3e", KeyID: "key-91ab"})
+	if err := r.g.Stream(ctx, chatReq, drain); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.starts.got[spanName][tenant.SpanAttribute]; got != "tenant-7f3e" {
+		t.Errorf("span starts with %s = %q, want tenant-7f3e", tenant.SpanAttribute, got)
+	}
+	for name, m := range r.metrics(t) {
+		for _, set := range pointAttrs(m) {
+			for k, v := range attrMap(set.ToSlice()) {
+				if strings.Contains(k, "tenant") || strings.Contains(v, "tenant-7f3e") || strings.Contains(v, "key-91ab") {
+					t.Errorf("%s carries %s = %q; a tenant on a metric is a new series per tenant", name, k, v)
 				}
 			}
 		}
