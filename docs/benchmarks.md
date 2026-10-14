@@ -116,7 +116,7 @@ This test measures how the time to first token (TTFT) of a small local model cha
 
 ```bash
 TRACE_SAMPLE_PERCENT=100 make up-obs      # keep every trace, for the Ollama timings
-docker compose -f deploy/compose.yaml run --rm migrate \
+docker compose -f deploy/compose.yaml run --rm gatewayctl \
   routes add --alias local --provider ollama --upstream-model llama3.2:3b --priority 10
 K6=grafana/k6:2.3.0@sha256:9c2dee7f8ed74d317e4027c06a10f169b625638189de8d4555d0b3486a5aeb34
 docker run --rm --network llm-gateway_default -v "$PWD/loadtests/k6:/scripts:ro" \
