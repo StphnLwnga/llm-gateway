@@ -3,6 +3,10 @@
 # migrations create the tables and grant rights on each one.
 set -euo pipefail
 
+: "${MIGRATOR_PASSWORD:?MIGRATOR_PASSWORD is required}"
+: "${APP_PASSWORD:?APP_PASSWORD is required}"
+: "${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}"
+
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<'SQL'
 \getenv migrator_pw MIGRATOR_PASSWORD
 \getenv app_pw APP_PASSWORD

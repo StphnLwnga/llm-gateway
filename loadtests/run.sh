@@ -27,9 +27,9 @@ quiet() {
 # different work.
 ensure_route() {
 	local alias=$1 model=$2 existing id current enabled
-	existing="$(quiet run --rm -T migrate routes list | awk -v a="$alias" '$2 == a { print $1, $5, $6 }')"
+	existing="$(quiet run --rm -T gatewayctl routes list | awk -v a="$alias" '$2 == a { print $1, $5, $6 }')"
 	if [[ -z "$existing" ]]; then
-		quiet run --rm -T migrate routes add --alias "$alias" --provider openai --upstream-model "$model" --priority 10
+		quiet run --rm -T gatewayctl routes add --alias "$alias" --provider openai --upstream-model "$model" --priority 10
 		return
 	fi
 	read -r id current enabled <<<"$existing"
@@ -38,7 +38,7 @@ ensure_route() {
 		exit 1
 	fi
 	if [[ "$enabled" != "true" ]]; then
-		quiet run --rm -T migrate routes enable "$id"
+		quiet run --rm -T gatewayctl routes enable "$id"
 	fi
 }
 
