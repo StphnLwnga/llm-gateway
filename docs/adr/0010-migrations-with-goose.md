@@ -54,7 +54,7 @@ run B: lock busy ─> retry 1s ... ─> lock ok ─> version 1 applied, nothing 
 ## Consequences
 
 - Good: concurrent runs are safe, and a crashed run never leaves a stuck lock.
-- Bad (open gap): today `migrate` and the gateway connect as the same Postgres user, which the official image creates as a superuser. The gateway can run DDL at runtime, and a superuser bypasses row-level security. Milestone 3 adds two roles: a migrator role that owns the schema and runs DDL, and an app role that can only read and write rows. Because table owners also bypass row-level security unless the table uses `FORCE ROW LEVEL SECURITY`, the app role must not own the tables.
+- Closed in milestone 3: `migrate` runs as `gateway_migrator`, which owns the schema and runs DDL. The gateway runs as `gateway_app`, which owns no table, has no `BYPASSRLS`, and has only the rights each migration grants. Because table owners bypass row-level security unless the table uses `FORCE ROW LEVEL SECURITY`, the gateway checks its role on every new connection and refuses a superuser, a `BYPASSRLS` role, or a role that owns a table in schema `public`, directly or through a role it can become. `gatewayctl` admin commands run as `gateway_admin`, which has `BYPASSRLS` and only the rights each migration grants.
 - Bad: each migration needs a hand-written `Down` section.
 
 ## Links

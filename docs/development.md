@@ -16,6 +16,32 @@ Provider keys go in a `.env` file at the repo root, for example `GROQ_API_KEY=..
 
 Migrations run as a separate one-shot step (`gatewayctl migrate up`), never when the gateway starts. The gateway starts even when Postgres is down. `/readyz` returns 503 until Postgres answers.
 
+### Database roles
+
+`deploy/postgres/initdb/10-roles.sh` creates three login roles, and each Compose service connects as one of them. The `postgres` superuser runs only the init script.
+
+| Role | Service | Rights |
+|---|---|---|
+| `gateway_migrator` | `migrate` | Owns the database and the tables, and runs DDL. Has `BYPASSRLS`. |
+| `gateway_app` | `gateway` | Only what each migration grants: today `SELECT` on `routes`. It cannot create a table or read `goose_db_version`. |
+| `gateway_admin` | `gatewayctl` | Only what each migration grants: today `SELECT`, `INSERT`, `UPDATE` and `DELETE` on `routes`. Has `BYPASSRLS`. |
+
+The gateway refuses a role that is a superuser, has `BYPASSRLS`, or owns a table in schema `public`, directly or through a role it can become. `/readyz` then returns 503, and its log line names the rule that failed. The passwords have local defaults in `compose.yaml`; `deploy/.env.example` lists the keys that override them.
+
+The `gatewayctl` service runs admin commands. It is in the `tools` profile, so `make up` does not start it:
+
+```bash
+docker compose -f deploy/compose.yaml run --rm gatewayctl routes list
+```
+
+Postgres runs the init script only when its data volume is empty. After a change to the script, remove the volume so the script runs again. This deletes the local data:
+
+```bash
+make down
+docker volume rm llm-gateway_pgdata
+make up
+```
+
 The [configuration page](configuration.md) lists every setting.
 
 ## Observability stack

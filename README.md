@@ -48,6 +48,7 @@ The gateway takes the OpenAI request shape, so an OpenAI SDK needs only a new ba
 │   ├── docker/
 │   │   └── Dockerfile       distroless, non-root images for the gateway and the fake provider
 │   ├── observability/       collector, Prometheus, Tempo and Grafana configs, and the dashboards
+│   ├── postgres/initdb/     the database roles, created when the Postgres volume is empty
 │   ├── compose.yaml         the local stack: Postgres, migrations, gateway
 │   ├── compose.observability.yaml adds the observability stack
 │   └── compose.loadtest.yaml the overhead test stack
@@ -78,7 +79,7 @@ You need Docker with Compose and a Groq API key.
 echo 'GROQ_API_KEY=<your key>' >> .env    # Compose reads it; git ignores it
 make up                                   # build, start Postgres, migrate, start the gateway
 curl localhost:8080/readyz                # {"status":"ready"}
-docker compose -f deploy/compose.yaml run --rm migrate \
+docker compose -f deploy/compose.yaml run --rm gatewayctl \
   routes add --alias chat --provider groq --upstream-model openai/gpt-oss-20b --priority 10
 sleep 10                                  # the gateway reloads routes every 10 s
 curl -N localhost:8080/v1/chat/completions \

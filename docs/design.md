@@ -186,7 +186,7 @@ request ─> API key ─> tenant_id
            so a query that forgets layer 1 still returns nothing it should not
 ```
 
-Layer 2 works only for a role that does not bypass it. Superusers and roles with `BYPASSRLS` always bypass row-level security, and table owners bypass it unless the table uses `FORCE ROW LEVEL SECURITY`. Today the gateway connects as a superuser, so milestone 3 adds a separate app role that does not own the tables ([0010](adr/0010-migrations-with-goose.md)).
+Layer 2 works only for a role that does not bypass it. Superusers and roles with `BYPASSRLS` always bypass row-level security, and table owners bypass it unless the table uses `FORCE ROW LEVEL SECURITY`. The gateway connects as `gateway_app`, which is not a superuser, has no `BYPASSRLS` and owns no table. It checks its role on every new connection and refuses any role that could bypass layer 2 ([0010](adr/0010-migrations-with-goose.md)).
 
 ## 5. Failure modes
 
@@ -265,8 +265,7 @@ postgres (healthy) ─> migrate (exit 0) ─> gateway
 
 Open gaps:
 
-1. **One database role.** `migrate` and the gateway connect as the same superuser. The gateway can run DDL, and row-level security would not apply to it. Milestone 3 adds a migrator role and an app role ([0010](adr/0010-migrations-with-goose.md)).
-2. **Readiness ping under pool exhaustion.** The ping shares the request pool, so a busy pool can fail readiness on every pod at once. Milestone 8 measures it under k6 load and chooses the check ([0009](adr/0009-pgx-pool-with-lazy-connect.md)).
-3. **Probe timing.** With the Kubernetes defaults (`periodSeconds` 10, `failureThreshold` 3) a pod can stay ready for about 30 s after SIGTERM, longer than the drain delay. Milestone 8 sets probe timing, and milestones 12 and 13 set load balancer health checks, to fit inside it ([0008](adr/0008-graceful-shutdown.md)).
-4. **Connections at scale-out.** Ten replicas with the default pool of 10 reach Postgres' default `max_connections` of 100. Milestone 8 sizes pools per replica or adds a connection pooler.
-5. **Classifier baseline.** Milestone 5 moves an existing batch classification client onto the gateway. Its failure rate before the move has no controlled measurement. Milestone 5 measures it from the client's call log, before and after the move.
+1. **Readiness ping under pool exhaustion.** The ping shares the request pool, so a busy pool can fail readiness on every pod at once. Milestone 8 measures it under k6 load and chooses the check ([0009](adr/0009-pgx-pool-with-lazy-connect.md)).
+2. **Probe timing.** With the Kubernetes defaults (`periodSeconds` 10, `failureThreshold` 3) a pod can stay ready for about 30 s after SIGTERM, longer than the drain delay. Milestone 8 sets probe timing, and milestones 12 and 13 set load balancer health checks, to fit inside it ([0008](adr/0008-graceful-shutdown.md)).
+3. **Connections at scale-out.** Ten replicas with the default pool of 10 reach Postgres' default `max_connections` of 100. Milestone 8 sizes pools per replica or adds a connection pooler.
+4. **Classifier baseline.** Milestone 5 moves an existing batch classification client onto the gateway. Its failure rate before the move has no controlled measurement. Milestone 5 measures it from the client's call log, before and after the move.
