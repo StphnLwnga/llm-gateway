@@ -92,7 +92,7 @@ func run(ctx context.Context, args []string, getenv func(string) (string, bool),
 		return postgres.Migrate(ctx, log, cfg.DatabaseURL, cmd.arg)
 	}
 
-	pool, err := postgres.Open(ctx, cfg.DatabaseURL, 2)
+	pool, err := postgres.OpenAdmin(ctx, cfg.DatabaseURL, 2)
 	if err != nil {
 		return err
 	}

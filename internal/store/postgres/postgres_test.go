@@ -101,7 +101,18 @@ func migrated(t *testing.T) testDB {
 	return d
 }
 
+// openPool opens an unguarded pool, for roles the gateway must refuse.
 func openPool(t *testing.T, dsn config.Secret) *pgxpool.Pool {
+	t.Helper()
+	pool, err := postgres.OpenAdmin(t.Context(), dsn, 4)
+	if err != nil {
+		t.Fatalf("OpenAdmin: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	return pool
+}
+
+func openGatewayPool(t *testing.T, dsn config.Secret) *pgxpool.Pool {
 	t.Helper()
 	pool, err := postgres.Open(t.Context(), dsn, 4)
 	if err != nil {
@@ -169,7 +180,7 @@ func TestMigrateUpStatusDownUp(t *testing.T) {
 	if !hasRoutesTable(t, pool) {
 		t.Error("the routes table is missing after migrate up")
 	}
-	app := openPool(t, d.App)
+	app := openGatewayPool(t, d.App)
 	if err := postgres.Migrate(ctx, discard, dsn, "down"); err != nil {
 		t.Fatalf("migrate down: %v", err)
 	}
@@ -263,7 +274,7 @@ func TestMigrateRejectsAnUnknownCommand(t *testing.T) {
 func TestReadyzFollowsPostgres(t *testing.T) {
 	t.Parallel()
 	d := startPostgres(t)
-	api := httpapi.New(discard, httpapi.Deps{}, postgres.Pinger{Pool: openPool(t, d.App)})
+	api := httpapi.New(discard, httpapi.Deps{}, postgres.Pinger{Pool: openGatewayPool(t, d.App)})
 
 	readyz := func() int {
 		rec := httptest.NewRecorder()
