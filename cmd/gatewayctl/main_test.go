@@ -22,7 +22,7 @@ func TestWrongArgumentsPrintUsageAndExit2(t *testing.T) {
 		nil,
 		{"migrate"},
 		{"migrate", "sideways"},
-		{"tenants", "list"},
+		{"tenants", "rename"},
 		{"migrate", "up", "extra"},
 	}
 	for _, args := range cases {
@@ -102,6 +102,49 @@ func TestRoutesAddRejectsInvalidValuesBeforeTouchingTheDatabase(t *testing.T) {
 			err := run(t.Context(), append(append([]string{}, base...), tc.extra...), env(nil), io.Discard, io.Discard)
 			if err == nil || errors.Is(err, errUsage) || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("err = %v, want a validation error naming %s", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestTenantAndKeyArgumentShapes(t *testing.T) {
+	t.Parallel()
+	for _, args := range [][]string{
+		{"tenants"},
+		{"tenants", "list", "extra"},
+		{"tenants", "create"},
+		{"tenants", "create", "--name", ""},
+		{"tenants", "create", "--name", "a", "stray"},
+		{"tenants", "disable"},
+		{"keys", "create"},
+		{"keys", "create", "--name", "a"},
+		{"keys", "list", "--tenant"},
+		{"keys", "revoke"},
+		{"keys", "revoke", "a", "b"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			t.Parallel()
+			if err := run(t.Context(), args, env(nil), io.Discard, io.Discard); !errors.Is(err, errUsage) {
+				t.Errorf("run(%q) = %v, want errUsage", args, err)
+			}
+		})
+	}
+}
+
+func TestTenantAndKeyIDsAreCheckedBeforeTouchingTheDatabase(t *testing.T) {
+	t.Parallel()
+	for _, args := range [][]string{
+		{"tenants", "disable", "7"},
+		{"keys", "create", "--tenant", "acme"},
+		{"keys", "list", "--tenant", "0196-x"},
+		{"keys", "revoke", "gw_abc"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			t.Parallel()
+			// No DATABASE_URL: the error must come from the ID check.
+			err := run(t.Context(), args, env(nil), io.Discard, io.Discard)
+			if err == nil || errors.Is(err, errUsage) || !strings.Contains(err.Error(), "is not an ID") {
+				t.Errorf("run(%q) = %v, want an ID error", args, err)
 			}
 		})
 	}

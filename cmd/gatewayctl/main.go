@@ -9,9 +9,11 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"regexp"
 	"strconv"
 	"syscall"
 	"text/tabwriter"
+	"time"
 
 	"github.com/StphnLwnga/llm-gateway/internal/config"
 	"github.com/StphnLwnga/llm-gateway/internal/money"
@@ -25,6 +27,12 @@ const usage = `usage: gatewayctl migrate up|down|status
                              [--input-price USD] [--output-price USD] [--default-max-tokens N] [--max-max-tokens N] [--disabled]
        gatewayctl routes list
        gatewayctl routes enable|disable ID
+       gatewayctl tenants create --name NAME
+       gatewayctl tenants list
+       gatewayctl tenants disable TENANT_ID
+       gatewayctl keys create --tenant TENANT_ID
+       gatewayctl keys list --tenant TENANT_ID
+       gatewayctl keys revoke KEY_ID
 
 Commands:
   migrate up       apply every pending migration
@@ -34,6 +42,12 @@ Commands:
   routes list      print every route
   routes enable    enable the route with this ID
   routes disable   disable the route with this ID
+  tenants create   add a tenant
+  tenants list     print every tenant
+  tenants disable  stop every key of the tenant from working; the tenant is kept
+  keys create      create an API key for the tenant and print it once
+  keys list        print the tenant's keys, by prefix only
+  keys revoke      stop the key from working; the record is kept
 
 Settings come from the environment. DATABASE_URL is required.
 `
@@ -65,8 +79,8 @@ func exitCode(err error) int {
 
 // command is one parsed invocation.
 type command struct {
-	name    string // "migrate", "routes add", "routes list", "routes enable", "routes disable"
-	arg     string // the migrate direction
+	name    string // the command words, for example "routes add" or "keys revoke"
+	arg     string // the migrate direction, a tenant name, or a tenant or key ID
 	id      int64
 	route   router.Route
 	invalid error // invalid values, reported after the shape is known to be right
@@ -98,8 +112,48 @@ func run(ctx context.Context, args []string, getenv func(string) (string, bool),
 	}
 	defer pool.Close()
 	routes := postgres.Routes{Pool: pool}
+	tenants := postgres.Tenants{Pool: pool}
 
 	switch cmd.name {
+	case "tenants create":
+		id, err := tenants.Create(ctx, cmd.arg)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(stdout, "tenant %s created: %s\n", id, cmd.arg)
+		return err
+	case "tenants list":
+		all, err := tenants.List(ctx)
+		if err != nil {
+			return err
+		}
+		return printTenants(stdout, all)
+	case "tenants disable":
+		if err := tenants.Disable(ctx, cmd.arg); err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(stdout, "tenant %s disabled\n", cmd.arg)
+		return err
+	case "keys create":
+		k, key, err := tenants.CreateKey(ctx, cmd.arg)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(stdout, "key %s created for tenant %s, prefix %s\n%s\nThe key is not shown again. Store it now.\n",
+			k.ID, k.TenantID, k.Prefix, key)
+		return err
+	case "keys list":
+		all, err := tenants.ListKeys(ctx, cmd.arg)
+		if err != nil {
+			return err
+		}
+		return printKeys(stdout, all)
+	case "keys revoke":
+		if err := tenants.RevokeKey(ctx, cmd.arg); err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(stdout, "key %s revoked\n", cmd.arg)
+		return err
 	case "routes add":
 		id, err := routes.Add(ctx, cmd.route)
 		if err != nil {
@@ -140,9 +194,40 @@ func parse(args []string, stderr io.Writer) (command, bool) {
 		return command{name: "routes " + args[1], id: id}, true
 	case len(args) >= 2 && args[0] == "routes" && args[1] == "add":
 		return parseAdd(args[2:], stderr)
+	case len(args) == 2 && args[0] == "tenants" && args[1] == "list":
+		return command{name: "tenants list"}, true
+	case len(args) == 3 && (args[0] == "tenants" && args[1] == "disable" || args[0] == "keys" && args[1] == "revoke"):
+		return idCommand(args[0]+" "+args[1], args[2]), true
+	case len(args) >= 2 && args[0] == "tenants" && args[1] == "create":
+		name, ok := oneFlag("tenants create", "name", args[2:], stderr)
+		return command{name: "tenants create", arg: name}, ok
+	case len(args) >= 2 && args[0] == "keys" && (args[1] == "create" || args[1] == "list"):
+		id, ok := oneFlag("keys "+args[1], "tenant", args[2:], stderr)
+		return idCommand("keys "+args[1], id), ok
 	}
 	return command{}, false
 }
+
+// oneFlag parses a command whose only argument is the required flag --name.
+func oneFlag(cmd, name string, args []string, stderr io.Writer) (string, bool) {
+	fs := flag.NewFlagSet(cmd, flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	v := fs.String(name, "", "")
+	if err := fs.Parse(args); err != nil || fs.NArg() != 0 || *v == "" {
+		return "", false
+	}
+	return *v, true
+}
+
+func idCommand(name, id string) command {
+	c := command{name: name, arg: id}
+	if !uuidPattern.MatchString(id) {
+		c.invalid = fmt.Errorf("%q is not an ID: IDs are UUIDs, as tenants list and keys list print them", id)
+	}
+	return c
+}
+
+var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 func parseAdd(args []string, stderr io.Writer) (command, bool) {
 	fs := flag.NewFlagSet("routes add", flag.ContinueOnError)
@@ -199,4 +284,29 @@ func printRoutes(w io.Writer, routes []router.Route) error {
 			r.UpstreamModel, r.Enabled, r.InputPrice, r.OutputPrice, opt(r.DefaultMaxTokens), opt(r.MaxMaxTokens))
 	}
 	return tw.Flush()
+}
+
+func printTenants(w io.Writer, tenants []postgres.Tenant) error {
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tNAME\tCREATED\tDISABLED")
+	for _, t := range tenants {
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", t.ID, t.Name, timestamp(&t.CreatedAt), timestamp(t.DisabledAt))
+	}
+	return tw.Flush()
+}
+
+func printKeys(w io.Writer, keys []postgres.APIKey) error {
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tPREFIX\tCREATED\tREVOKED")
+	for _, k := range keys {
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", k.ID, k.Prefix, timestamp(&k.CreatedAt), timestamp(k.RevokedAt))
+	}
+	return tw.Flush()
+}
+
+func timestamp(t *time.Time) string {
+	if t == nil {
+		return "-"
+	}
+	return t.UTC().Format(time.RFC3339)
 }
