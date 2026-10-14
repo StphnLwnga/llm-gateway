@@ -182,25 +182,32 @@ func TestMigrateUpStatusDownUp(t *testing.T) {
 	}
 	app := openGatewayPool(t, d.App)
 	if err := postgres.Migrate(ctx, discard, dsn, "down"); err != nil {
-		t.Fatalf("migrate down: %v", err)
+		t.Fatalf("migrate down the tenants: %v", err)
+	}
+	var tenants bool
+	if err := pool.QueryRow(ctx, "SELECT to_regclass('public.tenants') IS NOT NULL OR to_regclass('public.api_keys') IS NOT NULL OR to_regprocedure('public.auth_lookup(bytea)') IS NOT NULL").Scan(&tenants); err != nil || tenants {
+		t.Errorf("after migrate down a tenants object remains (%v, %v)", tenants, err)
+	}
+	if err := postgres.Migrate(ctx, discard, dsn, "down"); err != nil {
+		t.Fatalf("migrate down the routes grants: %v", err)
 	}
 	if !hasRoutesTable(t, pool) {
-		t.Error("the first migrate down must keep the routes table")
+		t.Error("the routes grants migrate down must keep the routes table")
 	}
 	if _, err := app.Exec(ctx, "SELECT 1 FROM routes"); !isPermissionDenied(err) {
-		t.Errorf("app SELECT on routes after the first migrate down = %v, want permission denied", err)
+		t.Errorf("app SELECT on routes after the grants migrate down = %v, want permission denied", err)
 	}
 	if err := postgres.Migrate(ctx, discard, dsn, "down"); err != nil {
-		t.Fatalf("second migrate down: %v", err)
+		t.Fatalf("migrate down the routes: %v", err)
 	}
 	if hasRoutesTable(t, pool) || !hasVectorExtension(t, pool) {
-		t.Error("the second migrate down must drop only the routes table")
+		t.Error("the routes migrate down must drop only the routes table")
 	}
 	if err := postgres.Migrate(ctx, discard, dsn, "down"); err != nil {
-		t.Fatalf("third migrate down: %v", err)
+		t.Fatalf("extensions migrate down: %v", err)
 	}
 	if n := appliedCount(t, pool, 1); n != 0 || !hasVectorExtension(t, pool) {
-		t.Errorf("after the third migrate down, version 1 is applied %d times and the extension exists %v; want 0 and true", n, hasVectorExtension(t, pool))
+		t.Errorf("after the extensions migrate down, version 1 is applied %d times and the extension exists %v; want 0 and true", n, hasVectorExtension(t, pool))
 	}
 	if err := postgres.Migrate(ctx, discard, dsn, "up"); err != nil {
 		t.Fatalf("migrate up again: %v", err)
