@@ -14,7 +14,7 @@ POST /v1/chat/completions          server
 
 | Span | Name | Attributes |
 |---|---|---|
-| HTTP server | `{method} {route}`, for example `POST /v1/chat/completions` | `http.request.method`, `http.route`, `http.response.status_code`, `http.response.body.size`, `url.path`, `url.scheme`, `server.address`, `server.port`, `network.protocol.version`, `network.peer.address`, `network.peer.port`, `client.address`, `user_agent.original` |
+| HTTP server | `{method} {route}`, for example `POST /v1/chat/completions` | `http.request.method`, `http.route`, `http.response.status_code`, `http.response.body.size`, `url.path`, `url.scheme`, `server.address`, `server.port`, `network.protocol.version`, `network.peer.address`, `network.peer.port`, `client.address`, `user_agent.original`, and `llm_gateway.tenant.id` once the API key is accepted |
 | GenAI inference (one per provider call) | `chat {gen_ai.request.model}`, for example `chat llama-3.1-8b-instant` | See the next table. |
 | HTTP client (to a provider) | `HTTP {method}`, for example `HTTP POST` | `http.request.method`, `http.response.status_code`, `url.full`, `server.address`, `server.port`, `network.protocol.version` |
 
@@ -22,7 +22,7 @@ The route is the pattern that matched, so an unknown path has the route `/`. A r
 
 ### GenAI span
 
-The GenAI names follow the OpenTelemetry GenAI semantic conventions at commit [6fd0d76](https://github.com/open-telemetry/semantic-conventions-genai/tree/6fd0d763a092db245a54104fc1124031eb3c51d2/docs/gen-ai) ([ADR 0016](adr/0016-observability.md)). The first five attributes are set when the span starts, so a sampler can use them.
+The GenAI names follow the OpenTelemetry GenAI semantic conventions at commit [6fd0d76](https://github.com/open-telemetry/semantic-conventions-genai/tree/6fd0d763a092db245a54104fc1124031eb3c51d2/docs/gen-ai) ([ADR 0016](adr/0016-observability.md)). The first six attributes are set when the span starts, so a sampler can use them.
 
 | Attribute | Value |
 |---|---|
@@ -31,6 +31,7 @@ The GenAI names follow the OpenTelemetry GenAI semantic conventions at commit [6
 | `gen_ai.request.model` | The upstream model from the routes table, not the alias the client sent |
 | `server.address`, `server.port` | From the provider's base URL |
 | `gen_ai.request.stream` | `true`. The chat endpoint streams from every provider, also for a non-streamed request |
+| `llm_gateway.tenant.id` | The tenant of the API key. On spans only, never on a metric |
 | `gen_ai.response.model` | The model the provider says answered, cut to 256 bytes. On the span only, never on a metric (decision 11) |
 | `gen_ai.response.finish_reasons` | For example `["stop"]`. `["error"]` when the answer did not finish: an upstream error, a cut stream or a cancel |
 | `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens` | As the provider reports them. The input count is left out when the provider does not report it |
@@ -159,4 +160,4 @@ Two Grafana dashboards chart these metrics: one for the gateway and one for the 
 
 ## Logs
 
-A log line written inside a request carries the `trace_id` and `span_id` of the server span. The request line (`chat completion`) and the `upstream error` line both have them, so a log search leads to the trace.
+A log line written inside a request carries the `trace_id` and `span_id` of the server span. The request line (`chat completion`) and the `upstream error` line both have them, so a log search leads to the trace. Once the API key is accepted, every line of the request also carries `tenant_id` and `key_id`. A rejected key is logged as `authentication failed` with a `reason`: `missing`, `not_bearer`, `malformed`, `bad_checksum` or `no_active_key`. No span, log line or error holds the key or the `Authorization` header.

@@ -28,11 +28,11 @@ The gateway takes the OpenAI request shape, so an OpenAI SDK needs only a new ba
 ├── cmd/
 │   ├── fakeprovider/        the fake upstream as a server, for local and load tests
 │   ├── gateway/             the HTTP server: composition root, graceful shutdown
-│   └── gatewayctl/          admin commands: migrations and routes
+│   └── gatewayctl/          admin commands: migrations, routes, tenants and API keys
 ├── internal/
 │   ├── config/              settings parsed into typed values, with secret redaction
 │   ├── fakeupstream/        a fake OpenAI chat completions server with fault modes
-│   ├── httpapi/             endpoints, readiness checks, the OpenAI error shape
+│   ├── httpapi/             endpoints, API key checks, readiness checks, the OpenAI error shape
 │   ├── money/               exact US dollar amounts in micro-dollars
 │   ├── provider/            the provider contract, typed upstream errors, the upstream HTTP client
 │   │   ├── ollama/          the adapter for Ollama's native chat API
@@ -41,7 +41,7 @@ The gateway takes the OpenAI request shape, so an OpenAI SDK needs only a new ba
 │   ├── router/              model alias to routes, from an in-memory snapshot
 │   ├── sse/                 the Server-Sent Events writer and heartbeats
 │   ├── store/
-│   │   └── postgres/        the connection pool, readiness check, migrations, routes table
+│   │   └── postgres/        the connection pool, readiness check, migrations, routes, tenants and keys
 │   ├── telemetry/           the structured logger, with trace IDs
 │   │   └── otelsdk/         OpenTelemetry tracer and meter providers, exported over OTLP/HTTP
 │   └── tenant/              the API key format and the caller's identity
@@ -80,16 +80,19 @@ You need Docker with Compose and a Groq API key.
 echo 'GROQ_API_KEY=<your key>' >> .env    # Compose reads it; git ignores it
 make up                                   # build, start Postgres, migrate, start the gateway
 curl localhost:8080/readyz                # {"status":"ready"}
-docker compose -f deploy/compose.yaml run --rm gatewayctl \
-  routes add --alias chat --provider groq --upstream-model openai/gpt-oss-20b --priority 10
+CTL='docker compose -f deploy/compose.yaml run --rm gatewayctl'
+$CTL routes add --alias chat --provider groq --upstream-model openai/gpt-oss-20b --priority 10
+$CTL tenants create --name demo           # prints: tenant <tenant ID> created: demo
+$CTL keys create --tenant <tenant ID>     # prints the key once, on its own line
 sleep 10                                  # the gateway reloads routes every 10 s
-curl -N localhost:8080/v1/chat/completions \
+curl -N localhost:8080/v1/chat/completions -H 'Authorization: Bearer <key>' \
   -d '{"model":"chat","stream":true,"messages":[{"role":"user","content":"hi"}]}'
 ```
 
 ## What works now
 
 - Chat completions in the OpenAI shape, streamed or not, from Groq, OpenAI and Ollama.
+- Tenants and API keys: every `/v1` request needs a key, which the gateway stores only as a hash. A revoked key or a disabled tenant stops working at once.
 - Model names map to routes, and a route change needs no deploy.
 - An early upstream error, such as a rate limit, gets a real HTTP status.
 - A slow model start gets heartbeats, so the client connection stays open.

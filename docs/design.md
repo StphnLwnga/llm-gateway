@@ -25,7 +25,8 @@ Decisions are recorded in [docs/adr/](adr/README.md). Reference pages: [API](api
 | Provider timings in usage: queue, load, prefill, decode and total, as each provider reports them (Groq: queue, prefill, decode, total; Ollama: load, prefill, decode, total). A value the provider does not report stays unset, never 0. A prompt count the provider does not report is marked unknown, never billed as 0. | Built (M1). Built (M2): the timings as attributes of the GenAI span, on no metric ([0016](adr/0016-observability.md), decision 18). |
 | A fake OpenAI-compatible upstream (`fakeprovider`) with deterministic output and fault modes chosen per request in the model name, for tests and load tests | Built (M1) |
 | Provider: Anthropic, and `response_format` across providers with output schema validation | Planned (M5) |
-| Tenants, hashed API keys, encrypted per-tenant provider credentials | Planned (M3) |
+| Tenants and hashed API keys; every `/v1/` request needs a key | Built (M3) |
+| Encrypted per-tenant provider credentials | Planned (M3) |
 | Routing: model aliases to an ordered provider list, from a routes table served from an in-memory snapshot ([0014](adr/0014-routes-in-postgres.md)) | Built (M1) |
 | Routing resilience: failover before the first content delta, a breaker per endpoint, jittered retries that honour `Retry-After` | Planned (M4) |
 | Rate limits, budget reservation and settlement, the exact cache | Planned (M7) |
@@ -35,7 +36,8 @@ Decisions are recorded in [docs/adr/](adr/README.md). Reference pages: [API](api
 | Semantic cache with a per-tenant filter | Planned (M11) |
 | `gatewayctl`: `migrate up`, `down`, `status` | Built (M0) |
 | `gatewayctl`: `routes add`, `list`, `enable`, `disable` | Built (M1) |
-| `gatewayctl`: tenants, keys, credentials, eval | Planned (M3, M9) |
+| `gatewayctl`: `tenants create`, `list`, `disable`; `keys create`, `list`, `revoke` | Built (M3) |
+| `gatewayctl`: credentials, eval | Planned (M3, M9) |
 
 ### Non-functional
 
@@ -90,9 +92,9 @@ What the estimates show:
 
 Two long-running processes, one admin binary, and a test server:
 
-- `cmd/gateway`: the request path. **Built (M0)**: health, readiness, the models stub, graceful shutdown, the Postgres pool. **Built (M1)**: the provider registry, with one adapter per provider that has a platform key, and Ollama when `OLLAMA_BASE_URL` is set. The rest is planned.
+- `cmd/gateway`: the request path. **Built (M0)**: health, readiness, the models stub, graceful shutdown, the Postgres pool. **Built (M1)**: the provider registry, with one adapter per provider that has a platform key, and Ollama when `OLLAMA_BASE_URL` is set. **Built (M3)**: API key authentication. The rest is planned.
 - `cmd/worker`: everything off the request path. **Planned (M6)**.
-- `cmd/gatewayctl`: one-shot admin commands. **Built (M0)**: `migrate`. **Built (M1)**: `routes`.
+- `cmd/gatewayctl`: one-shot admin commands. **Built (M0)**: `migrate`. **Built (M1)**: `routes`. **Built (M3)**: `tenants`, `keys`.
 - `cmd/fakeprovider`: a fake OpenAI-compatible upstream with per-request fault modes (slow headers, slow first token, slow tokens, stall, drop, malformed chunk, error status), for tests and load tests. **Built (M1)**. It has its own image target, so the production image does not contain it, and Compose starts it only under the `loadtest` profile.
 
 ```mermaid
@@ -113,7 +115,7 @@ flowchart LR
 
 The nine steps run in `cmd/gateway`, in this order. **Planned (M1 to M11)**; the milestone for each step is in brackets.
 
-1. Authenticate the API key, which resolves the tenant (M3).
+1. Authenticate the API key, which resolves the tenant. **Built (M3)**, without the auth cache: each request reads Postgres.
 2. Admit: check the rate limit, then reserve budget in Redis (M7).
 3. Run the input guards (M10).
 4. Look up the exact cache (M7), then the semantic cache (M11).
@@ -145,6 +147,17 @@ sequenceDiagram
     G->>P: 9. usage record and outbox row, one transaction
 ```
 
+Step 1 in detail:
+
+```text
+Authorization: Bearer gw_... ─> length, base62 and checksum, no database call ─> SHA-256 ─> auth_lookup(hash)
+  any failure      ─> 401 invalid_api_key, the same body for every reason; the log records the reason
+  lookup error     ─> 500 server_error, for example when Postgres is down
+  an active key    ─> the tenant ID and key ID go into the request context, the server span and every log line
+```
+
+`auth_lookup` returns a row only for an unrevoked key of an enabled tenant. The gateway role can call it but cannot read `api_keys` or `tenants` (section 4).
+
 Holding the status until the first token lets the gateway fail over, or return a real error status, for any failure before content starts. After the first token the status is sent, so a later failure arrives as an error event in the stream.
 
 ### Off the request path
@@ -164,12 +177,12 @@ reconciler: Postgres ledger ─> Redis spend
 
 ## 4. Data model
 
-**Built (M1):** migration 00002 adds `routes`. **Built (M3):** `deploy/postgres/initdb/10-roles.sh` creates the `vector` extension as the superuser, because pgvector is not a trusted extension; migration 00001 only confirms that it exists and does not drop it. Migration 00003 grants `SELECT` on `routes` to `gateway_app`, and `SELECT`, `INSERT`, `UPDATE` and `DELETE` to `gateway_admin`. **Planned:** the other tables below.
+**Built (M1):** migration 00002 adds `routes`. **Built (M3):** `deploy/postgres/initdb/10-roles.sh` creates the `vector` extension as the superuser, because pgvector is not a trusted extension; migration 00001 only confirms that it exists and does not drop it. Migration 00003 grants `SELECT` on `routes` to `gateway_app`, and `SELECT`, `INSERT`, `UPDATE` and `DELETE` to `gateway_admin`. Migration 00004 adds `tenants`, `api_keys` and the `auth_lookup` function. **Planned:** the other tables below.
 
 | Table | Holds | Milestone |
 |---|---|---|
-| `tenants` | One row per tenant | M3 |
-| `api_keys` | Key prefix, key hash, `revoked_at`. The full key is never stored. | M3 |
+| `tenants` | One row per tenant: a UUIDv7 ID, a unique name, `disabled_at` | Built (M3) |
+| `api_keys` | A UUIDv7 ID, the tenant, the first 8 characters of the key, the SHA-256 of the key (unique), `revoked_at`. The full key is never stored. | Built (M3) |
 | `provider_credentials` | Each tenant's provider keys, AES-GCM envelope encrypted (section 6) | M3 |
 | `routes` | Model alias, provider, upstream model, priority, enabled, input and output prices per million tokens (`numeric`, never float), default and maximum `max_tokens` | Built (M1) |
 | `budgets` | Spend limits per tenant and period | M7 |
@@ -188,6 +201,16 @@ request ─> API key ─> tenant_id
 
 Layer 2 works only for a role that does not bypass it. Superusers and roles with `BYPASSRLS` always bypass row-level security, and table owners bypass it unless the table uses `FORCE ROW LEVEL SECURITY`. The gateway connects as `gateway_app`, which is not a superuser, has no `BYPASSRLS` and owns no table. It checks its role on every new connection and refuses any role that could bypass layer 2 ([0010](adr/0010-migrations-with-goose.md)).
 
+**Built (M3)** for `tenants` and `api_keys`:
+
+| Part | Design |
+|---|---|
+| Policies | Both tables use `ENABLE` and `FORCE ROW LEVEL SECURITY`. A row is visible only when its tenant ID equals the setting `app.tenant_id`. |
+| Setting the tenant | `set_config('app.tenant_id', $1, true)` inside a transaction, never a plain `SET`, so the setting ends with the transaction and a pooled connection never carries it into another request. |
+| No tenant set | The policies read the setting through `nullif(..., '')`. After a transaction that set it, the setting is `''`, not `NULL`, and `''::uuid` would fail the query. With `nullif`, a connection with no tenant sees no rows. |
+| Key lookup | Before authentication no tenant is known, so `auth_lookup(hash)` is `SECURITY DEFINER`: it runs as its owner, the migrator, whose `BYPASSRLS` sees every key. It has an empty `search_path` and schema-qualified names, so a caller's objects cannot replace the tables it reads. Only `gateway_app` may call it. |
+| Rights | `gateway_app` has no rights on either table. `gateway_admin` has `SELECT`, `INSERT` and `UPDATE`, and no `DELETE`: a revoked key or a disabled tenant stays for audit. |
+
 ## 5. Failure modes
 
 What happens when each dependency fails, and what the client sees.
@@ -195,7 +218,7 @@ What happens when each dependency fails, and what the client sees.
 | Dependency | Failure | Gateway behaviour | Client sees | Status |
 |---|---|---|---|---|
 | Postgres | Down or unreachable | `/readyz` returns 503, so Kubernetes stops routing to the pod. `/healthz` stays 200, so no restart. The pool reconnects when Postgres returns. | New requests go to other pods. If all pods are out, the load balancer has no backend. | Built (M0), measured |
-| Postgres | Down, for a request already on the pod | Auth and the outbox write need Postgres. How long a cached key stays valid is decided in M3. | An error in the OpenAI envelope. | Planned (M3, M6) |
+| Postgres | Down, for a request already on the pod | Every request checks its key in Postgres, and the lookup fails. The outbox write (M6) needs Postgres too. A 30 s auth cache is planned in M3. | A 500 in the OpenAI envelope, not a 401. | Built (M3) for the key check. Planned (M3, M6) |
 | Postgres | Pool exhausted under load | The readiness ping waits for a connection and times out after 2 s, so the pod reports not ready although Postgres is up. | Fewer pods in rotation. See section 8. | Known trade-off, M8 |
 | Redis | Down | Each check fails open or closed, as decided in M7. The planned behaviour: rate limits fail open, budgets fail closed. The reconciler rebuilds spend when Redis returns. | Requests within budget proceed. A request that needs a budget hold gets an error in the OpenAI envelope. | Planned (M7) |
 | Kafka | Down | Nothing on the request path. Outbox rows accumulate in Postgres. The relay publishes them when Kafka returns, and billing is idempotent on `request_id`. | Nothing. | Planned (M6) |
@@ -209,12 +232,12 @@ What happens when each dependency fails, and what the client sees.
 
 | Area | Design | Status |
 |---|---|---|
-| API keys | Random keys, stored as a prefix and a hash, with `revoked_at`. The hash function (SHA-256 or argon2 for random keys) and the auth cache TTL against revocation speed are decided in M3. | Planned (M3) |
+| API keys | 256 random bits with a CRC32 checksum, sent as `Authorization: Bearer`. Stored as the first 8 characters and the SHA-256 of the key, with `revoked_at`. A slow password hash such as argon2 adds nothing for a random 256-bit key, and SHA-256 allows a direct index lookup. Every key failure gets the same 401. Planned (M3): a 30 s auth cache. | Built (M3) |
 | Provider credentials | Platform keys come from the environment as `config.Secret` values; a tenant key, when present, wins ([0013](adr/0013-provider-credentials.md)). Tenant keys use AES-GCM envelope encryption. The associated data is `tenant_id\|provider\|key_version`, so a ciphertext copied to another tenant's row fails to decrypt. The key-encryption key moves to a cloud KMS. | Built (M1) for platform keys. Planned (M3, M12, M13) for tenant keys. |
 | Secrets in config | `config.Secret` prints `[redacted]` through `fmt`, `log/slog` and `encoding/json`. `DATABASE_URL` is never logged, and a pgx parse error, which can quote the URL, is replaced with a fixed message. | Built (M0) |
 | Error bodies | A 5xx returns a fixed message; the full error goes to the log. The client message never comes from `err.Error()`. | Built (M0) |
 | Usage and request logs | `usage.v1` carries no prompt content. `requestlog.v1` is opt-in and redacted before it is produced, with the same PII redaction as the guards. | Planned (M6, M10) |
-| Tenant isolation | Application checks plus row-level security (section 4). | Planned (M3) |
+| Tenant isolation | Application checks plus row-level security (section 4). | Built (M3) for `tenants` and `api_keys`. Planned for the tenant tables of later milestones. |
 | Supply chain | Distroless static non-root image. Actions pinned by full commit SHA, with Dependabot weekly. `govulncheck` and gosec in CI. The Go toolchain pinned to a patch release with the known fixes. The CI token is read-only. | Built (M0), [0011](adr/0011-image-and-ci.md) |
 
 ## 7. Operations

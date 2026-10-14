@@ -6,8 +6,29 @@
 |---|---|
 | `GET /healthz` | Liveness. `200 {"status":"ok"}` while the process serves HTTP. It never checks a dependency. |
 | `GET /readyz` | Readiness. `200 {"status":"ready"}` when every readiness check passes; `503` while the server drains, when Postgres does not answer, or until the routes table has loaded once. |
-| `GET /v1/models` | The OpenAI model list: every alias in the routes table that has at least one enabled route with an enabled provider. `created` is the earliest route's creation time; `owned_by` is `llm-gateway`. |
-| `POST /v1/chat/completions` | OpenAI chat completions, streamed (SSE) or not. `model` is a route alias. See Chat completions below. |
+| `GET /v1/models` | Needs an API key. The OpenAI model list: every alias in the routes table that has at least one enabled route with an enabled provider. `created` is the earliest route's creation time; `owned_by` is `llm-gateway`. |
+| `POST /v1/chat/completions` | Needs an API key. OpenAI chat completions, streamed (SSE) or not. `model` is a route alias. See Chat completions below. |
+
+## Authentication
+
+Every `/v1/` request needs an API key in the `Authorization` header with the `Bearer` scheme, as the OpenAI SDKs send it. `/healthz` and `/readyz` need no key. `gatewayctl keys create` makes a key ([development](development.md#tenants-and-api-keys)).
+
+```bash
+curl localhost:8080/v1/models -H 'Authorization: Bearer gw_...'
+```
+
+A key is `gw_`, 43 random base62 characters (256 bits), and a 6-character CRC32 checksum of those characters: 52 characters in all. The gateway rejects a key with a wrong length, a character outside base62 or a wrong checksum before it reads the database. The database stores only the SHA-256 of the key and its first 8 characters after `gw_`.
+
+A missing header, another scheme, a malformed key, a wrong checksum, an unknown or revoked key, and a key of a disabled tenant all get the same response, so the response never says which check failed. The gateway log records the reason.
+
+```text
+HTTP/1.1 401 Unauthorized
+WWW-Authenticate: Bearer
+
+{"error":{"message":"Incorrect API key provided. Send the key in the Authorization header with the Bearer scheme.","type":"invalid_request_error","param":null,"code":"invalid_api_key"}}
+```
+
+When the gateway cannot check a key, for example when Postgres is down, the response is a 500 `server_error`, not a 401.
 
 ## Errors
 
@@ -59,10 +80,10 @@ The gateway serves a non-streamed request from an upstream stream too. It joins 
 
 ### Headers and logs
 
-Every response carries `X-Request-Id` and `X-LLM-Gateway-Provider`. The gateway writes one log line per request. The line has the provider, the status, the time to first token, the usage, and whether the stream was cut short.
+Every response carries `X-Request-Id` and `X-LLM-Gateway-Provider`. The gateway writes one log line per request. The line has the tenant and key IDs, the provider, the status, the time to first token, the usage, and whether the stream was cut short.
 
 ```bash
-curl -N localhost:8080/v1/chat/completions \
+curl -N localhost:8080/v1/chat/completions -H 'Authorization: Bearer gw_...' \
   -d '{"model":"chat","stream":true,"messages":[{"role":"user","content":"hi"}]}'
 ```
 

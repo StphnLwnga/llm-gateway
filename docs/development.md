@@ -22,9 +22,9 @@ Migrations run as a separate one-shot step (`gatewayctl migrate up`), never when
 
 | Role | Service | Rights |
 |---|---|---|
-| `gateway_migrator` | `migrate` | Owns the database and the tables, and runs DDL. Has `BYPASSRLS`. |
-| `gateway_app` | `gateway` | Only what each migration grants: today `SELECT` on `routes`. It cannot create a table or read `goose_db_version`. |
-| `gateway_admin` | `gatewayctl` | Only what each migration grants: today `SELECT`, `INSERT`, `UPDATE` and `DELETE` on `routes`. Has `BYPASSRLS`. |
+| `gateway_migrator` | `migrate` | Owns the database and the tables, and runs DDL. Has `BYPASSRLS`. `gatewayctl migrate` refuses any role that does not own the database, with "migrate needs the migrator role; use the migrate service". |
+| `gateway_app` | `gateway` | Only what each migration grants: today `SELECT` on `routes` and `EXECUTE` on `auth_lookup`. No rights on `tenants` or `api_keys`. It cannot create a table or read `goose_db_version`. |
+| `gateway_admin` | `gatewayctl` | Only what each migration grants: today `SELECT`, `INSERT`, `UPDATE` and `DELETE` on `routes`, and `SELECT`, `INSERT` and `UPDATE` on `tenants` and `api_keys`. Has `BYPASSRLS`. |
 
 The gateway refuses a role that is a superuser, has `BYPASSRLS`, or owns a table in schema `public`, directly or through a role it can become. `/readyz` then returns 503, and its log line names the rule that failed. The passwords have local defaults in `compose.yaml`; `deploy/.env.example` lists the keys that override them.
 
@@ -41,6 +41,22 @@ make down
 docker volume rm llm-gateway_pgdata
 make up
 ```
+
+### Tenants and API keys
+
+Every `/v1/` request needs an API key ([API](api.md#authentication)). `gatewayctl` creates tenants and keys through the `gatewayctl` service:
+
+```bash
+CTL='docker compose -f deploy/compose.yaml run --rm gatewayctl'
+$CTL tenants create --name acme             # tenant <tenant ID> created: acme
+$CTL tenants list                           # ID, name, created, disabled
+$CTL keys create --tenant <tenant ID>       # prints the key once; store it then
+$CTL keys list --tenant <tenant ID>         # ID, prefix, created, revoked; never the key or its hash
+$CTL keys revoke <key ID>                   # the key stops working on its next request
+$CTL tenants disable <tenant ID>            # every key of the tenant stops working
+```
+
+IDs are UUIDv7. A revoke or a disable keeps the row, and running it again keeps the first time. Nothing deletes a tenant or a key.
 
 The [configuration page](configuration.md) lists every setting.
 
