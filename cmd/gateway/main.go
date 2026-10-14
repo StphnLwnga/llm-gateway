@@ -104,6 +104,7 @@ func run(ctx context.Context, getenv func(string) (string, bool), stdout io.Writ
 	api := httpapi.New(log, httpapi.Deps{
 		Models: routing{routes},
 		Routes: routing{routes},
+		Keys:   postgres.Keys{Pool: pool},
 		Chat:   httpapi.ChatConfig{StatusHold: cfg.StatusHold, HeartbeatInterval: cfg.HeartbeatInterval, MaxBodyBytes: cfg.RequestMaxBytes},
 		Telemetry: httpapi.Telemetry{
 			Tracer:     tel.Tracer,

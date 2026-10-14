@@ -23,7 +23,7 @@ func (f checkFunc) Check(ctx context.Context) error { return f(ctx) }
 func do(t *testing.T, h http.Handler, method, path string) *httptest.ResponseRecorder {
 	t.Helper()
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), method, path, nil))
+	h.ServeHTTP(rec, WithKey(httptest.NewRequestWithContext(t.Context(), method, path, nil)))
 	return rec
 }
 
@@ -109,7 +109,7 @@ func TestReadyzBoundsEachCheck(t *testing.T) {
 
 func TestModelsReturnsTheOpenAIListShape(t *testing.T) {
 	t.Parallel()
-	rec := do(t, New(discard, Deps{}), http.MethodGet, "/v1/models")
+	rec := do(t, New(discard, Deps{Keys: FakeKeys{}}), http.MethodGet, "/v1/models")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET /v1/models = %d, want 200", rec.Code)
 	}
@@ -120,7 +120,7 @@ func TestModelsReturnsTheOpenAIListShape(t *testing.T) {
 
 func TestUnknownRouteIs404InTheOpenAIShape(t *testing.T) {
 	t.Parallel()
-	rec := do(t, New(discard, Deps{}), http.MethodGet, "/v1/nope")
+	rec := do(t, New(discard, Deps{Keys: FakeKeys{}}), http.MethodGet, "/v1/nope")
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("GET /v1/nope = %d, want 404", rec.Code)
 	}
@@ -134,7 +134,7 @@ func TestUnknownRouteIs404InTheOpenAIShape(t *testing.T) {
 
 func TestWrongMethodIs405InTheOpenAIShape(t *testing.T) {
 	t.Parallel()
-	rec := do(t, New(discard, Deps{}), http.MethodPost, "/v1/models")
+	rec := do(t, New(discard, Deps{Keys: FakeKeys{}}), http.MethodPost, "/v1/models")
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("POST /v1/models = %d, want 405", rec.Code)
 	}
@@ -231,7 +231,7 @@ func (f fixedModels) Models() []Model { return f }
 
 func TestModelsListsTheRoutedAliasesInTheOpenAIShape(t *testing.T) {
 	t.Parallel()
-	h := New(discard, Deps{Models: fixedModels{
+	h := New(discard, Deps{Keys: FakeKeys{}, Models: fixedModels{
 		{ID: "chat", Created: time.Unix(1760000000, 0)},
 		{ID: "fast", Created: time.Unix(1760000100, 0)},
 	}})

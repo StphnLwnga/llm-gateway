@@ -138,6 +138,7 @@ func TestClientDisconnectsAreCountedByStage(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		httpapi.WithKey(req)
 		if !afterFirstToken {
 			time.AfterFunc(100*time.Millisecond, cancel) // during the hold: no status sent yet
 			if resp, err := client.Do(req); err == nil {
@@ -202,12 +203,13 @@ func TestTheGatewaysTimeToFirstTokenStartsAtArrival(t *testing.T) {
 		reader, mp := metered(t)
 		h := httpapi.New(slog.New(slog.DiscardHandler), httpapi.Deps{
 			Routes:    resolver{"chat": {{ProviderName: "groq", Provider: delayed(100 * time.Millisecond), UpstreamModel: "m"}}},
+			Keys:      httpapi.FakeKeys{},
 			Chat:      httpapi.ChatConfig{StatusHold: time.Second, HeartbeatInterval: time.Second, MaxBodyBytes: 4 << 10},
 			Telemetry: httpapi.Telemetry{Meter: mp},
 		})
 		for _, stream := range []bool{true, false} {
-			r := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/v1/chat/completions",
-				&slowBody{delay: 300 * time.Millisecond, r: strings.NewReader(body(stream, ""))})
+			r := httpapi.WithKey(httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/v1/chat/completions",
+				&slowBody{delay: 300 * time.Millisecond, r: strings.NewReader(body(stream, ""))}))
 			w := httptest.NewRecorder()
 			h.ServeHTTP(w, r)
 			if w.Code != http.StatusOK {

@@ -33,6 +33,7 @@ type Handler struct {
 	log      *slog.Logger
 	models   ModelLister
 	resolver Resolver
+	keys     KeyLookup
 	chat     ChatConfig
 	checks   []Checker
 	draining atomic.Bool
@@ -42,10 +43,11 @@ type Handler struct {
 }
 
 // Deps are the parts the handler serves from. A nil Models lists nothing,
-// and a nil Routes resolves nothing.
+// a nil Routes resolves nothing, and a nil Keys accepts no key.
 type Deps struct {
 	Models    ModelLister
 	Routes    Resolver
+	Keys      KeyLookup
 	Chat      ChatConfig
 	Telemetry Telemetry
 }
@@ -58,13 +60,13 @@ func New(log *slog.Logger, deps Deps, checks ...Checker) *Handler {
 	if deps.Chat.HeartbeatInterval == 0 {
 		deps.Chat.HeartbeatInterval = 10 * time.Second
 	}
-	h := &Handler{log: log, models: deps.Models, resolver: deps.Routes, chat: deps.Chat, checks: checks, mux: http.NewServeMux()}
+	h := &Handler{log: log, models: deps.Models, resolver: deps.Routes, keys: deps.Keys, chat: deps.Chat, checks: checks, mux: http.NewServeMux()}
 	for _, rt := range h.routes() {
-		h.mux.HandleFunc(rt.method+" "+rt.path, rt.handler)
+		h.mux.HandleFunc(rt.method+" "+rt.path, h.requireKey(rt.handler))
 		// Without this, ServeMux answers a wrong method with a plain-text 405.
-		h.mux.HandleFunc(rt.path, h.methodNotAllowed(rt.method))
+		h.mux.HandleFunc(rt.path, h.requireKey(h.methodNotAllowed(rt.method)))
 	}
-	h.mux.HandleFunc("/", h.notFound)
+	h.mux.HandleFunc("/", h.requireKey(h.notFound))
 	h.handler = instrument(h.mux, deps.Telemetry)
 	var err error
 	if h.metrics, err = newChatMetrics(deps.Telemetry.Meter); err != nil {

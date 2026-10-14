@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -54,14 +55,17 @@ func TestRoutesAddedWithGatewayctlAppearInModels(t *testing.T) {
 	t.Parallel()
 	dsns := startPostgres(t)
 	ctl := buildGatewayctl(t)
-	gatewayctl := func(dsn config.Secret, args ...string) {
+	gatewayctl := func(dsn config.Secret, args ...string) string {
 		t.Helper()
 		cmd := exec.CommandContext(t.Context(), ctl, args...)
 		cmd.Env = append(os.Environ(), "DATABASE_URL="+string(dsn), "LOG_FORMAT=text")
-		if out, err := cmd.CombinedOutput(); err != nil {
+		out, err := cmd.CombinedOutput()
+		if err != nil {
 			t.Fatalf("gatewayctl %v: %v\n%s", args, err, out)
 		}
+		return string(out)
 	}
+	var key string // set once gatewayctl has created it
 
 	port := freePort(t)
 	base := "http://127.0.0.1:" + port
@@ -83,6 +87,9 @@ func TestRoutesAddedWithGatewayctlAppearInModels(t *testing.T) {
 		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, base+path, nil)
 		if err != nil {
 			t.Fatal(err)
+		}
+		if key != "" {
+			req.Header.Set("Authorization", "Bearer "+key)
 		}
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -128,6 +135,14 @@ func TestRoutesAddedWithGatewayctlAppearInModels(t *testing.T) {
 
 	gatewayctl(dsns.Migrator, "migrate", "up")
 	waitFor("/readyz to be 200 after the first load", func() bool { code, _ := get("/readyz"); return code == http.StatusOK })
+	if code, _ := get("/v1/models"); code != http.StatusUnauthorized {
+		t.Fatalf("/v1/models with no key = %d, want 401", code)
+	}
+
+	tenantID := strings.Fields(gatewayctl(dsns.Admin, "tenants", "create", "--name", "e2e"))[1]
+	created := strings.Split(gatewayctl(dsns.Admin, "keys", "create", "--tenant", tenantID), "\n")
+	keyID := strings.Fields(created[0])[1]
+	key = created[1]
 
 	gatewayctl(dsns.Admin, "routes", "add", "--alias", "local-chat", "--provider", "ollama", "--upstream-model", "llama3.2:3b", "--priority", "1")
 	gatewayctl(dsns.Admin, "routes", "add", "--alias", "gpt", "--provider", "openai", "--upstream-model", "gpt-x", "--priority", "1")
@@ -135,6 +150,14 @@ func TestRoutesAddedWithGatewayctlAppearInModels(t *testing.T) {
 
 	gatewayctl(dsns.Admin, "routes", "disable", "1")
 	waitFor("local-chat to leave /v1/models", func() bool { a, ok := aliases(); return ok && len(a) == 0 })
+
+	gatewayctl(dsns.Admin, "keys", "revoke", keyID)
+	if code, _ := get("/v1/models"); code != http.StatusUnauthorized {
+		t.Errorf("/v1/models with a revoked key = %d, want 401", code)
+	}
+	if strings.Contains(logs.String(), key) {
+		t.Error("the gateway logged the key")
+	}
 }
 
 // postgresImage is the same image as deploy/compose.yaml. Test files hold

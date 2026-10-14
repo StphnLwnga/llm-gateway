@@ -102,6 +102,7 @@ func start(t *testing.T, s setup) gateway {
 	logs := &syncBuffer{}
 	h := httpapi.New(slog.New(slog.NewJSONHandler(logs, nil)), httpapi.Deps{
 		Routes:    resolver{"chat": {{ProviderName: "fake", Provider: p, UpstreamModel: s.upstreamModel, MaxMaxTokens: s.maxMax}}},
+		Keys:      httpapi.FakeKeys{},
 		Chat:      httpapi.ChatConfig{StatusHold: s.hold, HeartbeatInterval: s.heartbeat, MaxBodyBytes: 4 << 10},
 		Telemetry: httpapi.Telemetry{Meter: s.meter},
 	})
@@ -119,6 +120,7 @@ func post(ctx context.Context, t *testing.T, g gateway, b string) *http.Response
 	if err != nil {
 		t.Fatal(err)
 	}
+	httpapi.WithKey(req)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("POST: %v", err)
@@ -518,6 +520,7 @@ func TestAClientDisconnectCancelsTheUpstream(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	httpapi.WithKey(req)
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatal(err)

@@ -47,6 +47,7 @@ func checkChatLogTraceIDs(t *testing.T, stream bool) {
 	logs := &syncBuffer{}
 	h := httpapi.New(telemetry.NewLogger(logs, slog.LevelInfo, "json"), httpapi.Deps{
 		Routes:    resolver{"chat": {{ProviderName: "fake", Provider: p, UpstreamModel: "fake?status=502"}}},
+		Keys:      httpapi.FakeKeys{},
 		Chat:      httpapi.ChatConfig{StatusHold: time.Second, HeartbeatInterval: time.Second, MaxBodyBytes: 4 << 10},
 		Telemetry: httpapi.Telemetry{Tracer: tp},
 	})
@@ -97,6 +98,7 @@ func TestAnUnsampledClientTraceIsRecordedAndContinuedUpstream(t *testing.T) {
 	p := openaicompat.New("fake", upstream+"/v1", "test-key", client)
 	h := httpapi.New(slog.New(slog.DiscardHandler), httpapi.Deps{
 		Routes:    resolver{"chat": {{ProviderName: "fake", Provider: p, UpstreamModel: "fake?status=502"}}},
+		Keys:      httpapi.FakeKeys{},
 		Chat:      httpapi.ChatConfig{StatusHold: time.Second, HeartbeatInterval: time.Second, MaxBodyBytes: 4 << 10},
 		Telemetry: httpapi.Telemetry{Tracer: tp, Propagator: prop},
 	})
@@ -108,6 +110,7 @@ func TestAnUnsampledClientTraceIsRecordedAndContinuedUpstream(t *testing.T) {
 		t.Fatal(err)
 	}
 	req.Header.Set("traceparent", "00-"+clientTraceID+"-"+clientSpanID+"-00") // sampled flag 00
+	httpapi.WithKey(req)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -162,6 +165,7 @@ func TestTheGenAISpanSitsBetweenTheServerAndHTTPClientSpans(t *testing.T) {
 	}
 	h := httpapi.New(slog.New(slog.DiscardHandler), httpapi.Deps{
 		Routes:    resolver{"chat": {{ProviderName: "fake", Provider: p, UpstreamModel: "fake"}}},
+		Keys:      httpapi.FakeKeys{},
 		Chat:      httpapi.ChatConfig{StatusHold: time.Second, HeartbeatInterval: time.Second, MaxBodyBytes: 4 << 10},
 		Telemetry: httpapi.Telemetry{Tracer: tp},
 	})

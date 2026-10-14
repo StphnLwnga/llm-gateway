@@ -51,6 +51,7 @@ func instrumented(t *testing.T) (*Handler, recorded) {
 	})
 	h := New(slog.New(slog.DiscardHandler), Deps{
 		Routes:    routes{"down": {{ProviderName: "down", Provider: unavailable{}}}},
+		Keys:      FakeKeys{},
 		Telemetry: Telemetry{Tracer: tp, Meter: mp, ServerAddr: "llm-gateway:8080"},
 	})
 	return h, recorded{spans: spans, reader: reader}
@@ -77,7 +78,7 @@ func TestServerSpansNameTheRouteTemplate(t *testing.T) {
 		{http.MethodDelete, "/v1/chat/completions", "DELETE /v1/chat/completions", "/v1/chat/completions", "405"},
 	}
 	for _, tc := range cases {
-		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), tc.method, tc.path, nil))
+		h.ServeHTTP(httptest.NewRecorder(), WithKey(httptest.NewRequestWithContext(t.Context(), tc.method, tc.path, nil)))
 	}
 	ended := rec.spans.Ended()
 	if len(ended) != len(cases) {
@@ -96,10 +97,10 @@ func TestServerSpansNameTheRouteTemplate(t *testing.T) {
 func TestAServerErrorMarksTheSpanButAClientErrorDoesNot(t *testing.T) {
 	t.Parallel()
 	h, rec := instrumented(t)
-	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v1/nope", nil))
+	h.ServeHTTP(httptest.NewRecorder(), WithKey(httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v1/nope", nil)))
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/v1/chat/completions",
-		strings.NewReader(`{"model":"down","messages":[{"role":"user","content":"hi"}]}`)))
+	h.ServeHTTP(w, WithKey(httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/v1/chat/completions",
+		strings.NewReader(`{"model":"down","messages":[{"role":"user","content":"hi"}]}`))))
 	if w.Code != http.StatusBadGateway {
 		t.Fatalf("chat with the upstream down = %d, want 502", w.Code)
 	}
@@ -120,7 +121,7 @@ func TestServerMetricsCarryTheRouteAndAFixedServerAddress(t *testing.T) {
 	t.Parallel()
 	h, rec := instrumented(t)
 	for _, path := range []string{"/v1/models", "/v1/nope/req_8f2a91", "/v1/nope/req_77c0d3"} {
-		r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, nil)
+		r := WithKey(httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, nil))
 		r.Host = "attacker.example:31337"
 		h.ServeHTTP(httptest.NewRecorder(), r)
 	}
@@ -189,7 +190,7 @@ func TestProbesRecordMetricsButNoSpans(t *testing.T) {
 	t.Parallel()
 	h, rec := instrumented(t)
 	get := func(path string) {
-		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, nil))
+		h.ServeHTTP(httptest.NewRecorder(), WithKey(httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, nil)))
 	}
 	get("/healthz")
 	get("/readyz")
