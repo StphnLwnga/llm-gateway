@@ -19,7 +19,11 @@ const body = JSON.stringify({
   stream: MODE === 'stream',
   messages: [{ role: 'user', content: 'hi' }],
 });
-const params = { headers: { 'Content-Type': 'application/json' }, timeout: '60s' };
+const headers = { 'Content-Type': 'application/json' };
+if (TARGET === 'gateway') {
+  headers.Authorization = `Bearer ${__ENV.API_KEY}`;
+}
+const params = { headers, timeout: '60s' };
 
 const words = ['The', ' quick', ' brown', ' fox', ' jumps', ' over', ' the', ' lazy', ' dog', '.'];
 const expected = Array.from({ length: TOKENS }, (_, i) => words[i % words.length]).join('');
@@ -40,7 +44,7 @@ export const options = {
 export function setup() {
   const want = TARGET === 'gateway' ? __ENV.ALIAS : 'fake';
   for (let i = 0; i < 60; i++) {
-    const res = http.get(`${base}/v1/models`, { timeout: '2s' });
+    const res = http.get(`${base}/v1/models`, { headers, timeout: '2s' });
     if (res.status === 200 && (res.json('data') || []).some((m) => m.id === want)) {
       return;
     }

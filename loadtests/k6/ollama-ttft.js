@@ -17,7 +17,7 @@ const passage = `A lighthouse keeper's day followed the light, not the clock. Be
   for weeks, so each station kept spare parts and food. Electric lamps and automatic controls replaced most keepers
   during the twentieth century, and many towers now run with no one on site.`;
 
-const params = { headers: { 'Content-Type': 'application/json' }, timeout: '180s' };
+const params = { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${__ENV.API_KEY}` }, timeout: '180s' };
 
 export const options = {
 	scenarios: {

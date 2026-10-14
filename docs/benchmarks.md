@@ -17,6 +17,7 @@ make loadtest-down   # remove the loadtest stack and its Postgres volume
 | Stack | A separate Compose project, `llm-gateway-loadtest`, from `deploy/compose.yaml` plus `deploy/compose.loadtest.yaml`. It has its own network and Postgres volume, and publishes no ports. Thus, it can run next to the normal stack. |
 | Gateway | Reads no `.env`. `OPENAI_BASE_URL` points at the fake provider, with a placeholder `OPENAI_API_KEY`. The normal stack never points at the fake. |
 | Routes | For each token delay, the script adds a route alias (`loadtest-fake-5ms`, `loadtest-fake-0ms`) with `gatewayctl routes add` if it is not there. A second run reuses it. |
+| Tenant and key | The script creates a tenant named `loadtest` if it is not there, and a new API key on each run, because `gatewayctl` prints a key only once. |
 | k6 | `grafana/k6:2.3.0`, pinned by digest. It runs as a container on the same Compose network. Both paths cross the same network, so the only difference is the gateway hop. |
 | Cases | 2 token delays (5 ms, 0 ms) x 2 paths (direct, gateway) x 2 modes (stream, non-stream) x 3 load levels (1, 10 and 100 virtual users). Each case is a separate k6 run. |
 | Order | The direct and gateway runs alternate at each level, so a change in the machine affects both paths. |
@@ -118,9 +119,11 @@ This test measures how the time to first token (TTFT) of a small local model cha
 TRACE_SAMPLE_PERCENT=100 make up-obs      # keep every trace, for the Ollama timings
 docker compose -f deploy/compose.yaml run --rm gatewayctl \
   routes add --alias local --provider ollama --upstream-model llama3.2:3b --priority 10
+docker compose -f deploy/compose.yaml run --rm gatewayctl tenants create --name ttft   # prints the tenant ID
+KEY="$(docker compose -f deploy/compose.yaml run --rm -T gatewayctl keys create --tenant <tenant-id> | sed -n 2p)"
 K6=grafana/k6:2.3.0@sha256:9c2dee7f8ed74d317e4027c06a10f169b625638189de8d4555d0b3486a5aeb34
 docker run --rm --network llm-gateway_default -v "$PWD/loadtests/k6:/scripts:ro" \
-  -e LEVEL=5 -e ROUNDS=4 "$K6" run --quiet /scripts/ollama-ttft.js
+  -e LEVEL=5 -e ROUNDS=4 -e API_KEY="$KEY" "$K6" run --quiet /scripts/ollama-ttft.js
 ```
 
 `LEVEL` is the number of virtual users, and `ROUNDS` the number of requests each one sends in sequence.

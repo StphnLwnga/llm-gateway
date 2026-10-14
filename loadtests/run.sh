@@ -75,6 +75,14 @@ for tpot in $TPOTS; do
 	ensure_route "loadtest-fake-$tpot" "fake?tokens=${TOKENS}&tpot=${tpot}"
 done
 
+# Every /v1/ request needs a key. The tenant is kept across runs; a key is
+# shown only once, so each run makes a new one.
+tenant="$(quiet run --rm -T gatewayctl tenants list | awk '$2 == "loadtest" { print $1 }')"
+if [[ -z "$tenant" ]]; then
+	tenant="$(quiet run --rm -T gatewayctl tenants create --name loadtest | awk '{ print $2 }')"
+fi
+api_key="$(quiet run --rm -T gatewayctl keys create --tenant "$tenant" | sed -n 2p)"
+
 # docker stats has no peak value, so sample it for the whole run.
 containers="$(compose ps -q gateway fakeprovider)"
 (
@@ -97,7 +105,7 @@ for tpot in $TPOTS; do
 				fi
 				quiet run --rm -T --no-deps k6 run --quiet \
 					-e TARGET="$target" -e MODE="$mode" -e VUS="$vus" -e TOKENS="$TOKENS" -e TPOT="$tpot" \
-					-e ALIAS="loadtest-fake-$tpot" -e FAKE_MODEL="fake?tokens=${TOKENS}&tpot=${tpot}" \
+					-e ALIAS="loadtest-fake-$tpot" -e FAKE_MODEL="fake?tokens=${TOKENS}&tpot=${tpot}" -e API_KEY="$api_key" \
 					-e WARMUP="${WARMUP_S}s" -e DURATION="${DURATION_S}s" \
 					overhead.js >/dev/null
 				tw="-"
