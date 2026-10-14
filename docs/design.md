@@ -164,7 +164,7 @@ reconciler: Postgres ledger ─> Redis spend
 
 ## 4. Data model
 
-**Built (M0):** migration 00001 enables the `vector` extension. **Built (M1):** migration 00002 adds `routes`. **Planned:** the other tables below.
+**Built (M1):** migration 00002 adds `routes`. **Built (M3):** `deploy/postgres/initdb/10-roles.sh` creates the `vector` extension as the superuser, because pgvector is not a trusted extension; migration 00001 only confirms that it exists and does not drop it. Migration 00003 grants `SELECT` on `routes` to `gateway_app`, and `SELECT`, `INSERT`, `UPDATE` and `DELETE` to `gateway_admin`. **Planned:** the other tables below.
 
 | Table | Holds | Milestone |
 |---|---|---|
