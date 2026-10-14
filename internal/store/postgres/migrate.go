@@ -22,6 +22,9 @@ var migrationFiles embed.FS
 // ErrUnknownCommand is returned for a migrate command other than up, down or status.
 var ErrUnknownCommand = errors.New("unknown migrate command")
 
+// ErrNotMigrator is returned when the role cannot own what the migrations create.
+var ErrNotMigrator = errors.New("migrate needs the migrator role; use the migrate service")
+
 // Migrate runs up, down or status against dsn; an advisory lock serializes concurrent runs.
 func Migrate(ctx context.Context, log *slog.Logger, dsn config.Secret, command string) error {
 	files, err := fs.Sub(migrationFiles, "migrations")
@@ -46,6 +49,16 @@ func migrate(ctx context.Context, log *slog.Logger, dsn config.Secret, command s
 			log.WarnContext(ctx, "close database", "err", err)
 		}
 	}()
+
+	var owner bool
+	err = db.QueryRowContext(ctx,
+		"SELECT pg_has_role(current_user, datdba, 'MEMBER') FROM pg_database WHERE datname = current_database()").Scan(&owner)
+	if err != nil {
+		return fmt.Errorf("check the database role: %w", err)
+	}
+	if !owner {
+		return ErrNotMigrator
+	}
 
 	// Retry every 1s, up to 120 times (goose's default: every 5s for 5 minutes).
 	locker, err := lock.NewPostgresSessionLocker(lock.WithLockTimeout(1, 120))

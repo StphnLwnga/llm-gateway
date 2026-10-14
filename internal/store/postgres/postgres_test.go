@@ -2,6 +2,7 @@ package postgres_test
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"math"
 	"net/http"
@@ -217,6 +218,16 @@ func TestMigrateUpStatusDownUp(t *testing.T) {
 	}
 	if _, err := app.Exec(ctx, "SELECT 1 FROM routes"); err != nil {
 		t.Errorf("app SELECT on routes after down then up: %v", err)
+	}
+}
+
+func TestMigrateRefusesARoleThatDoesNotOwnTheDatabase(t *testing.T) {
+	t.Parallel()
+	d := startPostgres(t)
+	for name, dsn := range map[string]config.Secret{"gateway_app": d.App, "gateway_admin": d.Admin} {
+		if err := postgres.Migrate(t.Context(), discard, dsn, "up"); !errors.Is(err, postgres.ErrNotMigrator) {
+			t.Errorf("migrate up as %s = %v, want ErrNotMigrator", name, err)
+		}
 	}
 }
 
