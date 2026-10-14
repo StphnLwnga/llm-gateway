@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"io"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -15,15 +16,15 @@ import (
 
 func TestRoutesCommandsAgainstPostgres(t *testing.T) {
 	t.Parallel()
-	dsn := startPostgres(t)
-	vars := env(map[string]string{"DATABASE_URL": string(dsn), "LOG_FORMAT": "text"})
-	ctl := func(args ...string) (string, error) {
+	dsns := startPostgres(t)
+	ctlAs := func(dsn config.Secret, args ...string) (string, error) {
 		var out bytes.Buffer
-		err := run(t.Context(), args, vars, &out, io.Discard)
+		err := run(t.Context(), args, env(map[string]string{"DATABASE_URL": string(dsn), "LOG_FORMAT": "text"}), &out, io.Discard)
 		return out.String(), err
 	}
+	ctl := func(args ...string) (string, error) { return ctlAs(dsns.Admin, args...) }
 
-	if _, err := ctl("migrate", "up"); err != nil {
+	if _, err := ctlAs(dsns.Migrator, "migrate", "up"); err != nil {
 		t.Fatalf("migrate up: %v", err)
 	}
 	out, err := ctl("routes", "add", "--alias", "chat", "--provider", "groq", "--upstream-model", "llama-8b",
@@ -80,8 +81,13 @@ func indexOf(id string, rows []string) int {
 // testcontainers into the code that govulncheck scans.
 const postgresImage = "pgvector/pgvector:0.8.7-pg18-trixie"
 
+// roleDSNs holds a connection string per role that deploy/postgres/initdb/10-roles.sh creates.
+type roleDSNs struct {
+	Migrator, App, Admin config.Secret
+}
+
 // startPostgres skips without Docker locally, but fails in CI so the tests never silently stop.
-func startPostgres(t *testing.T) config.Secret {
+func startPostgres(t *testing.T) roleDSNs {
 	t.Helper()
 	ctx := t.Context()
 	provider, err := testcontainers.ProviderDocker.GetProvider()
@@ -95,19 +101,30 @@ func startPostgres(t *testing.T) config.Secret {
 		t.Skipf("Docker is not available, skipping the Postgres integration test: %v", err)
 	}
 
+	passwords := map[string]string{"MIGRATOR_PASSWORD": "migrator-test", "APP_PASSWORD": "app-test", "ADMIN_PASSWORD": "admin-test"}
 	ctr, err := tcpostgres.Run(ctx, postgresImage,
 		tcpostgres.WithDatabase("gateway"),
-		tcpostgres.WithUsername("gateway"),
-		tcpostgres.WithPassword("gateway-test"),
+		tcpostgres.WithUsername("postgres"),
+		tcpostgres.WithPassword("postgres-test"),
+		tcpostgres.WithInitScripts("../../deploy/postgres/initdb/10-roles.sh"),
+		testcontainers.WithEnv(passwords),
 		tcpostgres.BasicWaitStrategies(),
 	)
 	testcontainers.CleanupContainer(t, ctr)
 	if err != nil {
 		t.Fatalf("start postgres: %v", err)
 	}
-	dsn, err := ctr.ConnectionString(ctx, "sslmode=disable")
+	addr, err := ctr.PortEndpoint(ctx, "5432/tcp", "")
 	if err != nil {
-		t.Fatalf("connection string: %v", err)
+		t.Fatalf("postgres address: %v", err)
 	}
-	return config.Secret(dsn)
+	dsn := func(user, password string) config.Secret {
+		u := url.URL{Scheme: "postgres", User: url.UserPassword(user, password), Host: addr, Path: "/gateway", RawQuery: "sslmode=disable"}
+		return config.Secret(u.String())
+	}
+	return roleDSNs{
+		Migrator: dsn("gateway_migrator", passwords["MIGRATOR_PASSWORD"]),
+		App:      dsn("gateway_app", passwords["APP_PASSWORD"]),
+		Admin:    dsn("gateway_admin", passwords["ADMIN_PASSWORD"]),
+	}
 }

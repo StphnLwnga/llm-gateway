@@ -14,11 +14,7 @@ import (
 
 func migratedRoutes(t *testing.T) (postgres.Routes, *pgxpool.Pool) {
 	t.Helper()
-	_, dsn := startPostgres(t)
-	if err := postgres.Migrate(t.Context(), discard, dsn, "up"); err != nil {
-		t.Fatalf("migrate up: %v", err)
-	}
-	pool := openPool(t, dsn)
+	pool := openPool(t, migrated(t).Admin)
 	return postgres.Routes{Pool: pool}, pool
 }
 

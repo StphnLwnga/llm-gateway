@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -27,8 +28,28 @@ var discard = slog.New(slog.DiscardHandler)
 // postgresImage is the same image as deploy/compose.yaml.
 const postgresImage = "pgvector/pgvector:0.8.7-pg18-trixie"
 
+// The passwords match the variables deploy/postgres/initdb/10-roles.sh reads.
+const (
+	superuserPassword = "postgres-test"
+	migratorPassword  = "migrator-test"
+	appPassword       = "app-test"
+	adminPassword     = "admin-test"
+)
+
+// testDB is a Postgres container bootstrapped by the same init script as Compose.
+type testDB struct {
+	ctr                             *tcpostgres.PostgresContainer
+	addr                            string
+	Superuser, Migrator, App, Admin config.Secret
+}
+
+func (d testDB) dsn(user, password string) config.Secret {
+	u := url.URL{Scheme: "postgres", User: url.UserPassword(user, password), Host: d.addr, Path: "/gateway", RawQuery: "sslmode=disable"}
+	return config.Secret(u.String())
+}
+
 // startPostgres skips without Docker locally, but fails in CI so the tests never silently stop.
-func startPostgres(t *testing.T) (*tcpostgres.PostgresContainer, config.Secret) {
+func startPostgres(t *testing.T) testDB {
 	t.Helper()
 	ctx := t.Context()
 	provider, err := testcontainers.ProviderDocker.GetProvider()
@@ -44,19 +65,40 @@ func startPostgres(t *testing.T) (*tcpostgres.PostgresContainer, config.Secret) 
 
 	ctr, err := tcpostgres.Run(ctx, postgresImage,
 		tcpostgres.WithDatabase("gateway"),
-		tcpostgres.WithUsername("gateway"),
-		tcpostgres.WithPassword("gateway-test"),
+		tcpostgres.WithUsername("postgres"),
+		tcpostgres.WithPassword(superuserPassword),
+		tcpostgres.WithInitScripts("../../../deploy/postgres/initdb/10-roles.sh"),
+		testcontainers.WithEnv(map[string]string{
+			"MIGRATOR_PASSWORD": migratorPassword,
+			"APP_PASSWORD":      appPassword,
+			"ADMIN_PASSWORD":    adminPassword,
+		}),
 		tcpostgres.BasicWaitStrategies(),
 	)
 	testcontainers.CleanupContainer(t, ctr)
 	if err != nil {
 		t.Fatalf("start postgres: %v", err)
 	}
-	dsn, err := ctr.ConnectionString(ctx, "sslmode=disable")
+	addr, err := ctr.PortEndpoint(ctx, "5432/tcp", "")
 	if err != nil {
-		t.Fatalf("connection string: %v", err)
+		t.Fatalf("postgres address: %v", err)
 	}
-	return ctr, config.Secret(dsn)
+	d := testDB{ctr: ctr, addr: addr}
+	d.Superuser = d.dsn("postgres", superuserPassword)
+	d.Migrator = d.dsn("gateway_migrator", migratorPassword)
+	d.App = d.dsn("gateway_app", appPassword)
+	d.Admin = d.dsn("gateway_admin", adminPassword)
+	return d
+}
+
+// migrated runs every migration as the migrator, as Compose does.
+func migrated(t *testing.T) testDB {
+	t.Helper()
+	d := startPostgres(t)
+	if err := postgres.Migrate(t.Context(), discard, d.Migrator, "up"); err != nil {
+		t.Fatalf("migrate up: %v", err)
+	}
+	return d
 }
 
 func openPool(t *testing.T, dsn config.Secret) *pgxpool.Pool {
@@ -101,7 +143,8 @@ func hasRoutesTable(t *testing.T, pool *pgxpool.Pool) bool {
 
 func TestMigrateUpStatusDownUp(t *testing.T) {
 	t.Parallel()
-	_, dsn := startPostgres(t)
+	d := startPostgres(t)
+	dsn := d.Migrator
 	ctx := t.Context()
 	pool := openPool(t, dsn)
 
@@ -126,17 +169,21 @@ func TestMigrateUpStatusDownUp(t *testing.T) {
 	if !hasRoutesTable(t, pool) {
 		t.Error("the routes table is missing after migrate up")
 	}
+	app := openPool(t, d.App)
 	if err := postgres.Migrate(ctx, discard, dsn, "down"); err != nil {
 		t.Fatalf("migrate down: %v", err)
 	}
-	if hasRoutesTable(t, pool) || !hasVectorExtension(t, pool) {
-		t.Error("the first migrate down must drop only the routes table")
+	if !hasRoutesTable(t, pool) {
+		t.Error("the first migrate down must keep the routes table")
+	}
+	if _, err := app.Exec(ctx, "SELECT 1 FROM routes"); !isPermissionDenied(err) {
+		t.Errorf("app SELECT on routes after the first migrate down = %v, want permission denied", err)
 	}
 	if err := postgres.Migrate(ctx, discard, dsn, "down"); err != nil {
 		t.Fatalf("second migrate down: %v", err)
 	}
-	if hasVectorExtension(t, pool) {
-		t.Error("the vector extension is still there after the second migrate down")
+	if hasRoutesTable(t, pool) || !hasVectorExtension(t, pool) {
+		t.Error("the second migrate down must drop only the routes table")
 	}
 	if err := postgres.Migrate(ctx, discard, dsn, "up"); err != nil {
 		t.Fatalf("migrate up again: %v", err)
@@ -144,11 +191,14 @@ func TestMigrateUpStatusDownUp(t *testing.T) {
 	if !hasVectorExtension(t, pool) || !hasRoutesTable(t, pool) {
 		t.Error("the vector extension or the routes table is missing after down then up")
 	}
+	if _, err := app.Exec(ctx, "SELECT 1 FROM routes"); err != nil {
+		t.Errorf("app SELECT on routes after down then up: %v", err)
+	}
 }
 
 func TestConcurrentMigrateUpAppliesOnce(t *testing.T) {
 	t.Parallel()
-	_, dsn := startPostgres(t)
+	dsn := startPostgres(t).Migrator
 	ctx := t.Context()
 
 	var wg sync.WaitGroup
@@ -171,7 +221,7 @@ func TestConcurrentMigrateUpAppliesOnce(t *testing.T) {
 // fast to overlap: without the lock, the test above still passes.
 func TestMigrateLockSerializesOverlappingRuns(t *testing.T) {
 	t.Parallel()
-	_, dsn := startPostgres(t)
+	dsn := startPostgres(t).Migrator
 	ctx := t.Context()
 	slow := fstest.MapFS{"00001_slow.sql": {Data: []byte(`-- +goose Up
 CREATE TABLE IF NOT EXISTS applied_runs (at timestamptz NOT NULL DEFAULT now());
@@ -212,8 +262,8 @@ func TestMigrateRejectsAnUnknownCommand(t *testing.T) {
 
 func TestReadyzFollowsPostgres(t *testing.T) {
 	t.Parallel()
-	ctr, dsn := startPostgres(t)
-	api := httpapi.New(discard, httpapi.Deps{}, postgres.Pinger{Pool: openPool(t, dsn)})
+	d := startPostgres(t)
+	api := httpapi.New(discard, httpapi.Deps{}, postgres.Pinger{Pool: openPool(t, d.App)})
 
 	readyz := func() int {
 		rec := httptest.NewRecorder()
@@ -225,7 +275,7 @@ func TestReadyzFollowsPostgres(t *testing.T) {
 	}
 
 	stopTimeout := 5 * time.Second
-	if err := ctr.Stop(context.WithoutCancel(t.Context()), &stopTimeout); err != nil {
+	if err := d.ctr.Stop(context.WithoutCancel(t.Context()), &stopTimeout); err != nil {
 		t.Fatalf("stop postgres: %v", err)
 	}
 	start := time.Now()

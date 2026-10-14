@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -51,9 +52,9 @@ func buildGatewayctl(t *testing.T) string {
 
 func TestRoutesAddedWithGatewayctlAppearInModels(t *testing.T) {
 	t.Parallel()
-	dsn := startPostgres(t)
+	dsns := startPostgres(t)
 	ctl := buildGatewayctl(t)
-	gatewayctl := func(args ...string) {
+	gatewayctl := func(dsn config.Secret, args ...string) {
 		t.Helper()
 		cmd := exec.CommandContext(t.Context(), ctl, args...)
 		cmd.Env = append(os.Environ(), "DATABASE_URL="+string(dsn), "LOG_FORMAT=text")
@@ -69,7 +70,7 @@ func TestRoutesAddedWithGatewayctlAppearInModels(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- run(ctx, env(map[string]string{
-			"PORT": port, "DATABASE_URL": string(dsn), "ROUTES_REFRESH_INTERVAL": "200ms",
+			"PORT": port, "DATABASE_URL": string(dsns.App), "ROUTES_REFRESH_INTERVAL": "200ms",
 			"OLLAMA_BASE_URL": "http://127.0.0.1:1", // enabled; no request reaches it in this test
 		}), &logs)
 	}()
@@ -125,14 +126,14 @@ func TestRoutesAddedWithGatewayctlAppearInModels(t *testing.T) {
 		t.Fatalf("/readyz before the routes loaded = %d, want 503", code)
 	}
 
-	gatewayctl("migrate", "up")
+	gatewayctl(dsns.Migrator, "migrate", "up")
 	waitFor("/readyz to be 200 after the first load", func() bool { code, _ := get("/readyz"); return code == http.StatusOK })
 
-	gatewayctl("routes", "add", "--alias", "local-chat", "--provider", "ollama", "--upstream-model", "llama3.2:3b", "--priority", "1")
-	gatewayctl("routes", "add", "--alias", "gpt", "--provider", "openai", "--upstream-model", "gpt-x", "--priority", "1")
+	gatewayctl(dsns.Admin, "routes", "add", "--alias", "local-chat", "--provider", "ollama", "--upstream-model", "llama3.2:3b", "--priority", "1")
+	gatewayctl(dsns.Admin, "routes", "add", "--alias", "gpt", "--provider", "openai", "--upstream-model", "gpt-x", "--priority", "1")
 	waitFor("local-chat in /v1/models", func() bool { a, ok := aliases(); return ok && slices.Equal(a, []string{"local-chat"}) })
 
-	gatewayctl("routes", "disable", "1")
+	gatewayctl(dsns.Admin, "routes", "disable", "1")
 	waitFor("local-chat to leave /v1/models", func() bool { a, ok := aliases(); return ok && len(a) == 0 })
 }
 
@@ -141,8 +142,13 @@ func TestRoutesAddedWithGatewayctlAppearInModels(t *testing.T) {
 // testcontainers into the code that govulncheck scans.
 const postgresImage = "pgvector/pgvector:0.8.7-pg18-trixie"
 
+// roleDSNs holds a connection string per role that deploy/postgres/initdb/10-roles.sh creates.
+type roleDSNs struct {
+	Migrator, App, Admin config.Secret
+}
+
 // startPostgres skips without Docker locally, but fails in CI so the tests never silently stop.
-func startPostgres(t *testing.T) config.Secret {
+func startPostgres(t *testing.T) roleDSNs {
 	t.Helper()
 	ctx := t.Context()
 	provider, err := testcontainers.ProviderDocker.GetProvider()
@@ -156,19 +162,30 @@ func startPostgres(t *testing.T) config.Secret {
 		t.Skipf("Docker is not available, skipping the Postgres integration test: %v", err)
 	}
 
+	passwords := map[string]string{"MIGRATOR_PASSWORD": "migrator-test", "APP_PASSWORD": "app-test", "ADMIN_PASSWORD": "admin-test"}
 	ctr, err := tcpostgres.Run(ctx, postgresImage,
 		tcpostgres.WithDatabase("gateway"),
-		tcpostgres.WithUsername("gateway"),
-		tcpostgres.WithPassword("gateway-test"),
+		tcpostgres.WithUsername("postgres"),
+		tcpostgres.WithPassword("postgres-test"),
+		tcpostgres.WithInitScripts("../../deploy/postgres/initdb/10-roles.sh"),
+		testcontainers.WithEnv(passwords),
 		tcpostgres.BasicWaitStrategies(),
 	)
 	testcontainers.CleanupContainer(t, ctr)
 	if err != nil {
 		t.Fatalf("start postgres: %v", err)
 	}
-	dsn, err := ctr.ConnectionString(ctx, "sslmode=disable")
+	addr, err := ctr.PortEndpoint(ctx, "5432/tcp", "")
 	if err != nil {
-		t.Fatalf("connection string: %v", err)
+		t.Fatalf("postgres address: %v", err)
 	}
-	return config.Secret(dsn)
+	dsn := func(user, password string) config.Secret {
+		u := url.URL{Scheme: "postgres", User: url.UserPassword(user, password), Host: addr, Path: "/gateway", RawQuery: "sslmode=disable"}
+		return config.Secret(u.String())
+	}
+	return roleDSNs{
+		Migrator: dsn("gateway_migrator", passwords["MIGRATOR_PASSWORD"]),
+		App:      dsn("gateway_app", passwords["APP_PASSWORD"]),
+		Admin:    dsn("gateway_admin", passwords["ADMIN_PASSWORD"]),
+	}
 }
