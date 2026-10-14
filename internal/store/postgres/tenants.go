@@ -19,6 +19,9 @@ var (
 	ErrKeyNotFound    = errors.New("API key not found")
 )
 
+// ErrTenantDisabled is returned when a key is requested for a disabled tenant.
+var ErrTenantDisabled = errors.New("a key for it could never authenticate")
+
 // Tenant is one row of the tenants table.
 type Tenant struct {
 	ID         string
@@ -90,14 +93,29 @@ func (s Tenants) CreateKey(ctx context.Context, tenantID string) (APIKey, string
 		return APIKey{}, "", fmt.Errorf("generate key: %w", err)
 	}
 	k := APIKey{TenantID: tenantID, Prefix: tenant.DisplayPrefix(key)}
-	err = s.Pool.QueryRow(ctx, "INSERT INTO api_keys (tenant_id, prefix, hash) VALUES ($1, $2, $3) RETURNING id::text, created_at",
-		tenantID, k.Prefix, tenant.HashKey(key)).Scan(&k.ID, &k.CreatedAt)
-	if err != nil {
-		var pe *pgconn.PgError
-		if errors.As(err, &pe) && pe.Code == "23503" {
-			return APIKey{}, "", fmt.Errorf("%w: id %s", ErrTenantNotFound, tenantID)
+	err = pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
+		// FOR SHARE makes a disable running at the same time wait for this
+		// transaction, or this one wait for it and then see disabled_at.
+		var disabled bool
+		err := tx.QueryRow(ctx, "SELECT disabled_at IS NOT NULL FROM tenants WHERE id = $1 FOR SHARE", tenantID).Scan(&disabled)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("%w: id %s", ErrTenantNotFound, tenantID)
 		}
-		return APIKey{}, "", fmt.Errorf("insert key: %w", err)
+		if err != nil {
+			return fmt.Errorf("check tenant: %w", err)
+		}
+		if disabled {
+			return fmt.Errorf("tenant %s is disabled; %w", tenantID, ErrTenantDisabled)
+		}
+		err = tx.QueryRow(ctx, "INSERT INTO api_keys (tenant_id, prefix, hash) VALUES ($1, $2, $3) RETURNING id::text, created_at",
+			tenantID, k.Prefix, tenant.HashKey(key)).Scan(&k.ID, &k.CreatedAt)
+		if err != nil {
+			return fmt.Errorf("insert key: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return APIKey{}, "", err
 	}
 	return k, key, nil
 }

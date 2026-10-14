@@ -50,7 +50,7 @@ Every `/v1/` request needs an API key ([API](api.md#authentication)). `gatewayct
 CTL='docker compose -f deploy/compose.yaml run --rm gatewayctl'
 $CTL tenants create --name acme             # tenant <tenant ID> created: acme
 $CTL tenants list                           # ID, name, created, disabled
-$CTL keys create --tenant <tenant ID>       # prints the key once; store it then
+$CTL keys create --tenant <tenant ID>       # prints the key once; store it then; refuses a disabled tenant
 $CTL keys list --tenant <tenant ID>         # ID, prefix, created, revoked; never the key or its hash
 $CTL keys revoke <key ID>                   # the key stops working on its next request
 $CTL tenants disable <tenant ID>            # every key of the tenant stops working

@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -220,6 +221,74 @@ func TestOnlyTheAppRoleCanCallTheLookup(t *testing.T) {
 		if !isPermissionDenied(err) {
 			t.Errorf("%s calling auth_lookup = %v, want permission denied", dsn.name, err)
 		}
+	}
+}
+
+func TestCreateKeyRefusesADisabledTenant(t *testing.T) {
+	t.Parallel()
+	d := newTenantsDB(t)
+	ctx := t.Context()
+	if err := d.admin.Disable(ctx, d.b); err != nil {
+		t.Fatal(err)
+	}
+	_, key, err := d.admin.CreateKey(ctx, d.b)
+	if !errors.Is(err, postgres.ErrTenantDisabled) || key != "" {
+		t.Errorf("CreateKey(disabled tenant) = key %q, %v; want no key and ErrTenantDisabled", key, err)
+	}
+	if err == nil || !strings.Contains(err.Error(), "tenant "+d.b+" is disabled; a key for it could never authenticate") {
+		t.Errorf("CreateKey(disabled tenant) error = %v, want it to name the tenant", err)
+	}
+	if keys, err := d.admin.ListKeys(ctx, d.b); err != nil || len(keys) != 1 || keys[0].ID != d.idB {
+		t.Errorf("keys of the disabled tenant = %+v, %v; want only the key it had before", keys, err)
+	}
+	if _, _, err := d.admin.CreateKey(ctx, d.a); err != nil {
+		t.Errorf("CreateKey(enabled tenant) = %v", err)
+	}
+}
+
+// A disable that is still in its transaction must not let a key through:
+// CreateKey waits for it, then sees disabled_at.
+func TestCreateKeyWaitsForADisableInProgress(t *testing.T) {
+	t.Parallel()
+	d := newTenantsDB(t)
+	ctx := t.Context()
+	tx, err := d.admin.Pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, "UPDATE tenants SET disabled_at = now() WHERE id = $1", d.b); err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := d.admin.CreateKey(ctx, d.b)
+		done <- err
+	}()
+	super := openPool(t, d.Superuser)
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		var waiting bool
+		if err := super.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND usename = 'gateway_admin')").Scan(&waiting); err != nil {
+			t.Fatal(err)
+		}
+		if waiting {
+			break
+		}
+		select {
+		case err := <-done:
+			t.Fatalf("CreateKey returned %v while the disable was still open; it must wait for the tenant row", err)
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("CreateKey never waited on the tenant row")
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; !errors.Is(err, postgres.ErrTenantDisabled) {
+		t.Errorf("CreateKey after the disable committed = %v, want ErrTenantDisabled", err)
 	}
 }
 

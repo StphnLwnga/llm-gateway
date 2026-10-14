@@ -65,6 +65,10 @@ func TestTenantAndKeyCommandsAgainstPostgres(t *testing.T) {
 	if out := ctl("tenants", "disable", tenantID); out != "tenant "+tenantID+" disabled\n" {
 		t.Errorf("tenants disable printed %q", out)
 	}
+	out, err := ctlAs(dsns.Admin, "keys", "create", "--tenant", tenantID)
+	if want := "tenant " + tenantID + " is disabled; a key for it could never authenticate"; err == nil || !strings.Contains(err.Error(), want) || exitCode(err) != 1 || out != "" {
+		t.Errorf("keys create for a disabled tenant = %q, %v; want no output, exit 1 and %q", out, err, want)
+	}
 	tenants := ctl("tenants", "list")
 	if lines := strings.Split(strings.TrimSpace(tenants), "\n"); len(lines) != 2 || !strings.HasPrefix(lines[1], tenantID+"  acme") || strings.HasSuffix(lines[1], "-") {
 		t.Errorf("tenants list after disable:\n%s", tenants)
