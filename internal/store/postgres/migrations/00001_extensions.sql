@@ -4,4 +4,5 @@
 CREATE EXTENSION IF NOT EXISTS vector;
 
 -- +goose Down
-DROP EXTENSION IF EXISTS vector;
+-- No-op: deploy/postgres/initdb/10-roles.sh creates the extension as the
+-- superuser, so the migrator does not own it and cannot drop it.

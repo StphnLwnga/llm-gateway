@@ -196,6 +196,12 @@ func TestMigrateUpStatusDownUp(t *testing.T) {
 	if hasRoutesTable(t, pool) || !hasVectorExtension(t, pool) {
 		t.Error("the second migrate down must drop only the routes table")
 	}
+	if err := postgres.Migrate(ctx, discard, dsn, "down"); err != nil {
+		t.Fatalf("third migrate down: %v", err)
+	}
+	if n := appliedCount(t, pool, 1); n != 0 || !hasVectorExtension(t, pool) {
+		t.Errorf("after the third migrate down, version 1 is applied %d times and the extension exists %v; want 0 and true", n, hasVectorExtension(t, pool))
+	}
 	if err := postgres.Migrate(ctx, discard, dsn, "up"); err != nil {
 		t.Fatalf("migrate up again: %v", err)
 	}
