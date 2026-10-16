@@ -30,5 +30,6 @@ Provider keys go in a `.env` file at the repo root, which Compose passes to the 
 | `OTEL_RESOURCE_ATTRIBUTES` | none | Extra resource attributes as `key=value` pairs, separated by commas, for example `deployment.environment.name=staging`. Read by the OpenTelemetry SDK. |
 | `OTEL_METRIC_EXPORT_INTERVAL` | `60000` | How often the gateway exports metrics, in milliseconds. `make up-obs` sets `15000`. Read by the OpenTelemetry SDK. |
 | `ROUTES_REFRESH_INTERVAL` | `10s` | A Go duration above 0. How often the gateway reloads the routes table into memory. A change made with `gatewayctl routes` takes effect within one interval. |
+| `AUTH_CACHE_TTL` | `30s` | A Go duration from 0 to `5m`. How long the gateway serves an accepted API key from memory before it checks Postgres again. A revoked key or a disabled tenant stops working within this time for new requests. `0` turns the cache off, so every request checks Postgres. |
 
 The OpenTelemetry SDK also reads the other standard `OTEL_EXPORTER_OTLP_*` settings, such as headers, timeout and compression. The sampler and the propagator are fixed, so `OTEL_TRACES_SAMPLER` and `OTEL_PROPAGATORS` have no effect. The SDK keeps every span, the collector samples, and the propagator is W3C TraceContext ([ADR 0016](adr/0016-observability.md)).

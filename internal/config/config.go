@@ -88,6 +88,9 @@ type Config struct {
 	// RoutesRefreshInterval is how often the routes snapshot reloads from Postgres.
 	RoutesRefreshInterval time.Duration
 
+	// AuthCacheTTL is how long an accepted API key is served from memory. 0 turns the cache off.
+	AuthCacheTTL time.Duration
+
 	// OTLPEndpoint turns on trace and metric export when set.
 	OTLPEndpoint string
 }
@@ -99,6 +102,9 @@ func (c Config) Addr() string {
 
 // maxDBConns keeps DB_MAX_CONNS far below Postgres' connection limit and inside int32.
 const maxDBConns = 1000
+
+// A revoked key keeps working until its cache entry expires, so the TTL is bounded.
+const maxAuthCacheTTL = 5 * time.Minute
 
 // A body smaller than 1 KiB cannot hold a useful chat request; 64 MiB bounds memory per request.
 const (
@@ -171,6 +177,13 @@ func Load(lookup func(key string) (string, bool)) (Config, error) {
 	cfg.StreamStallTimeout = positive("STREAM_STALL_TIMEOUT", "30s")
 	cfg.StatusHold = duration("STATUS_HOLD", "3s")
 	cfg.HeartbeatInterval = positive("HEARTBEAT_INTERVAL", "10s")
+
+	rawTTL := get("AUTH_CACHE_TTL", "30s")
+	ttl, err := time.ParseDuration(rawTTL)
+	if err != nil || ttl < 0 || ttl > maxAuthCacheTTL {
+		errs = append(errs, fmt.Errorf("AUTH_CACHE_TTL %q: must be a duration from 0 to 5m, for example 30s; 0 turns the cache off", rawTTL))
+	}
+	cfg.AuthCacheTTL = ttl
 
 	rawMaxBytes := get("REQUEST_MAX_BYTES", "4194304")
 	maxBytes, err := strconv.ParseInt(rawMaxBytes, 10, 64)

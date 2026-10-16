@@ -66,6 +66,9 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	if cfg.RoutesRefreshInterval != 10*time.Second {
 		t.Errorf("RoutesRefreshInterval = %v, want 10s", cfg.RoutesRefreshInterval)
 	}
+	if cfg.AuthCacheTTL != 30*time.Second {
+		t.Errorf("AuthCacheTTL = %v, want 30s", cfg.AuthCacheTTL)
+	}
 	if cfg.OllamaBaseURL != "" {
 		t.Errorf("OllamaBaseURL = %q by default, want empty (Ollama disabled)", cfg.OllamaBaseURL)
 	}
@@ -158,6 +161,16 @@ func TestLoadParsesDurations(t *testing.T) {
 					cfg.DrainDelay, cfg.ShutdownTimeout, tc.wantDrain, tc.wantShutdown)
 			}
 		})
+	}
+}
+
+func TestLoadParsesTheAuthCacheTTL(t *testing.T) {
+	t.Parallel()
+	for raw, want := range map[string]time.Duration{"0s": 0, "0": 0, "1s": time.Second, "5m": 5 * time.Minute} {
+		cfg, err := Load(env(map[string]string{"AUTH_CACHE_TTL": raw}))
+		if err != nil || cfg.AuthCacheTTL != want {
+			t.Errorf("AUTH_CACHE_TTL=%s: AuthCacheTTL = %v, %v; want %v", raw, cfg.AuthCacheTTL, err, want)
+		}
 	}
 }
 
@@ -255,6 +268,10 @@ func TestLoadRejectsInvalidSettings(t *testing.T) {
 		{"request max bytes not a number", map[string]string{"REQUEST_MAX_BYTES": "4MiB"}, "REQUEST_MAX_BYTES"},
 		{"routes refresh interval zero", map[string]string{"ROUTES_REFRESH_INTERVAL": "0s"}, "ROUTES_REFRESH_INTERVAL"},
 		{"routes refresh interval not a duration", map[string]string{"ROUTES_REFRESH_INTERVAL": "often"}, "ROUTES_REFRESH_INTERVAL"},
+		{"auth cache ttl negative", map[string]string{"AUTH_CACHE_TTL": "-1s"}, "AUTH_CACHE_TTL"},
+		{"auth cache ttl above the bound", map[string]string{"AUTH_CACHE_TTL": "5m1s"}, "AUTH_CACHE_TTL"},
+		{"auth cache ttl without a unit", map[string]string{"AUTH_CACHE_TTL": "30"}, "AUTH_CACHE_TTL"},
+		{"auth cache ttl set but empty", map[string]string{"AUTH_CACHE_TTL": ""}, "AUTH_CACHE_TTL"},
 		{"ollama base url set but empty", map[string]string{"OLLAMA_BASE_URL": ""}, "OLLAMA_BASE_URL"},
 		{"ollama base url without a scheme", map[string]string{"OLLAMA_BASE_URL": "localhost:11434"}, "OLLAMA_BASE_URL"},
 		{"otlp endpoint without a scheme", map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "otel-collector:4318"}, "OTEL_EXPORTER_OTLP_ENDPOINT"},
