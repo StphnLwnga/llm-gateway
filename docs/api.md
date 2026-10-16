@@ -30,6 +30,14 @@ WWW-Authenticate: Bearer
 
 When the gateway cannot check a key, for example when Postgres is down, the response is a 500 `server_error`, not a 401.
 
+The gateway keeps an accepted key in memory for `AUTH_CACHE_TTL`, 30 s by default ([configuration](configuration.md)). The time counts from the start of the lookup that accepted the key.
+
+- **Revocation.** After a revoke or a tenant disable, a new request with the key can still pass until that time ends, and never after it. A request that the key authenticated before the revoke, such as a long stream, runs to its end.
+- **Rejections.** A rejected key is not kept in memory, so a new key works on its first request.
+- **Postgres down.** A key in memory still works until its time ends. After that, its requests get the 500.
+
+`gatewayctl keys list` shows when each key was last used. The gateway saves these times once a minute and when it shuts down, so a time can be up to a minute later than the request. A gateway that stops without a shutdown, for example when it is killed, loses the uses since its last save.
+
 ## Errors
 
 Every error uses the OpenAI error shape. An unknown route returns 404. A known path with the wrong method returns 405 with an `Allow` header.

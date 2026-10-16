@@ -93,7 +93,7 @@ curl -N localhost:8080/v1/chat/completions -H 'Authorization: Bearer <key>' \
 ## What works now
 
 - Chat completions in the OpenAI shape, streamed or not, from Groq, OpenAI and Ollama.
-- Tenants and API keys: every `/v1` request needs a key, which the gateway stores only as a hash. A revoked key or a disabled tenant stops working at once.
+- Tenants and API keys: every `/v1` request needs a key, which the gateway stores only as a hash. Accepted keys are cached in memory for 30 s, so a revoked key or a disabled tenant stops working within 30 s.
 - Model names map to routes, and a route change needs no deploy.
 - An early upstream error, such as a rate limit, gets a real HTTP status.
 - A slow model start gets heartbeats, so the client connection stays open.

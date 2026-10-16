@@ -121,6 +121,15 @@ These metrics describe a chat request as the client sees it. Failures are counte
 | `llm_gateway.chat.client_disconnects` | counter | `{request}` | `llm_gateway.stage`: `before_commit` or `after_commit` | Each request whose client left before the answer ended |
 | `llm_gateway.provider.watchdog.timeouts` | counter | `{timeout}` | `gen_ai.provider.name`, `llm_gateway.deadline`: `first_token` or `stall` | Each provider call that a liveness deadline ended |
 
+### Auth metrics
+
+| Metric | Type | Unit | Attributes | Records |
+|---|---|---|---|---|
+| `llm_gateway.auth.failures` | counter | `{request}` | `llm_gateway.auth.reason`: `missing`, `not_bearer`, `malformed`, `bad_checksum` or `no_active_key` | Each request rejected with a 401. Counted with the auth cache on or off |
+| `llm_gateway.auth.cache.lookups` | counter | `{lookup}` | `llm_gateway.cache.result`: `hit` or `miss` | Each key that passed the format and checksum checks, by whether it was in the auth cache. Nothing when `AUTH_CACHE_TTL` is 0 |
+| `llm_gateway.auth.cache.size` | gauge | `{entry}` | none | The keys in the auth cache, expired ones included until the sweep each minute |
+| `llm_gateway.auth.lookup.duration` | histogram | `s` | none | Each key lookup in Postgres: a cache miss, or every check when the cache is off. Shared lookups count once. Buckets from 0.1 ms to 2.5 s |
+
 Prometheus stores the names with underscores and a unit suffix, for example `gen_ai_client_inference_duration_seconds` and `llm_gateway_chat_stream_commits_total`.
 
 ### Error types
@@ -150,9 +159,9 @@ Every attribute has a bounded set of values:
 | `gen_ai.request.model` | The upstream models in the routes table |
 | `error.type` | The [error types](#error-types) |
 | `gen_ai.token.modality` | `text` and `unknown` |
-| `llm_gateway.*` | The fixed lists in the gateway metrics table |
+| `llm_gateway.*` | The fixed lists in the gateway and auth metrics tables |
 
-No metric carries a tenant, a request ID, the response model, a provider timing or a model alias from the request.
+No metric carries a tenant, a key ID, a key hash, a request ID, the response model, a provider timing or a model alias from the request.
 
 ## Dashboards
 
@@ -160,4 +169,4 @@ Two Grafana dashboards chart these metrics: one for the gateway and one for the 
 
 ## Logs
 
-A log line written inside a request carries the `trace_id` and `span_id` of the server span. The request line (`chat completion`) and the `upstream error` line both have them, so a log search leads to the trace. Once the API key is accepted, every line of the request also carries `tenant_id` and `key_id`. A rejected key is logged as `authentication failed` with a `reason`: `missing`, `not_bearer`, `malformed`, `bad_checksum` or `no_active_key`. No span, log line or error holds the key or the `Authorization` header.
+A log line written inside a request carries the `trace_id` and `span_id` of the server span. The request line (`chat completion`) and the `upstream error` line both have them, so a log search leads to the trace. Once the API key is accepted, every line of the request also carries `tenant_id` and `key_id`. A rejected key is logged as `authentication failed` with a `reason`: `missing`, `not_bearer`, `malformed`, `bad_checksum` or `no_active_key`. No span, log line or error holds the key or the `Authorization` header. A failed save of last-used times is logged as a warning, and the next save retries those keys.
