@@ -11,8 +11,8 @@ import (
 )
 
 // serve runs srv on ln until ctx is cancelled, then drains, shuts down and
-// flushes telemetry. srv must keep its default BaseContext: request contexts
-// derived from ctx would all end on SIGTERM.
+// flushes what the last requests recorded. srv must keep its default
+// BaseContext: request contexts derived from ctx would all end on SIGTERM.
 func serve(ctx context.Context, log *slog.Logger, ln net.Listener, srv *http.Server,
 	startDraining func(), drainDelay, shutdownTimeout time.Duration, flush func(context.Context) error) error {
 	serveErr := make(chan error, 1)

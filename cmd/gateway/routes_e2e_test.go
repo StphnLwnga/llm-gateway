@@ -72,16 +72,19 @@ func TestRoutesAddedWithGatewayctlAppearInModels(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	var logs syncBuffer
 	done := make(chan error, 1)
+	const authCacheTTL = time.Second
 	go func() {
 		done <- run(ctx, env(map[string]string{
 			"PORT": port, "DATABASE_URL": string(dsns.App), "ROUTES_REFRESH_INTERVAL": "200ms",
+			"AUTH_CACHE_TTL":  authCacheTTL.String(),
 			"OLLAMA_BASE_URL": "http://127.0.0.1:1", // enabled; no request reaches it in this test
 		}), &logs)
 	}()
-	t.Cleanup(func() {
+	stop := sync.OnceValue(func() error {
 		cancel()
-		<-done
+		return <-done
 	})
+	t.Cleanup(func() { _ = stop() })
 
 	get := func(path string) (int, []byte) {
 		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, base+path, nil)
@@ -151,9 +154,22 @@ func TestRoutesAddedWithGatewayctlAppearInModels(t *testing.T) {
 	gatewayctl(dsns.Admin, "routes", "disable", "1")
 	waitFor("local-chat to leave /v1/models", func() bool { a, ok := aliases(); return ok && len(a) == 0 })
 
+	// The key is cached from the requests above, so a new request may still
+	// pass until the entry expires.
 	gatewayctl(dsns.Admin, "keys", "revoke", keyID)
-	if code, _ := get("/v1/models"); code != http.StatusUnauthorized {
-		t.Errorf("/v1/models with a revoked key = %d, want 401", code)
+	revoked := time.Now()
+	waitFor("the revoked key to get 401", func() bool { code, _ := get("/v1/models"); return code == http.StatusUnauthorized })
+	if took := time.Since(revoked); took > authCacheTTL+time.Second {
+		t.Errorf("the revoked key got 401 after %v, want within the %v TTL plus a margin", took.Round(time.Millisecond), authCacheTTL)
+	}
+
+	// The gateway saves last-used times every minute, and once more when it stops.
+	if err := stop(); err != nil {
+		t.Fatalf("gateway exit: %v\nlogs:\n%s", err, logs.String())
+	}
+	keys := strings.Split(strings.TrimSpace(gatewayctl(dsns.Admin, "keys", "list", "--tenant", tenantID)), "\n")
+	if row := strings.Fields(keys[len(keys)-1]); len(keys) != 2 || row[0] != keyID || row[len(row)-1] == "-" {
+		t.Errorf("keys list after the gateway stopped shows no last used time:\n%s", strings.Join(keys, "\n"))
 	}
 	if strings.Contains(logs.String(), key) {
 		t.Error("the gateway logged the key")

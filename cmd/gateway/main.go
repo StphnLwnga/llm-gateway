@@ -17,6 +17,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 
+	"github.com/StphnLwnga/llm-gateway/internal/authcache"
 	"github.com/StphnLwnga/llm-gateway/internal/config"
 	"github.com/StphnLwnga/llm-gateway/internal/httpapi"
 	"github.com/StphnLwnga/llm-gateway/internal/provider"
@@ -58,6 +59,7 @@ func run(ctx context.Context, getenv func(string) (string, bool), stdout io.Writ
 		"provider_connect_timeout", cfg.ProviderConnectTimeout.String(),
 		"provider_first_byte_timeout", cfg.ProviderFirstByteTimeout.String(),
 		"routes_refresh_interval", cfg.RoutesRefreshInterval.String(),
+		"auth_cache_ttl", cfg.AuthCacheTTL.String(),
 		"provider_first_token_timeout", cfg.ProviderFirstTokenTimeout.String(),
 		"stream_stall_timeout", cfg.StreamStallTimeout.String(),
 		"status_hold", cfg.StatusHold.String(),
@@ -93,6 +95,11 @@ func run(ctx context.Context, getenv func(string) (string, bool), stdout io.Writ
 	}
 	defer pool.Close()
 
+	keys, err := authcache.New(postgres.Keys{Pool: pool}, cfg.AuthCacheTTL, log, tel.Meter)
+	if err != nil {
+		return fmt.Errorf("auth cache telemetry: %w", err)
+	}
+
 	routes := router.New(postgres.Routes{Pool: pool}, registry, cfg.RoutesRefreshInterval, log)
 	refreshed := make(chan struct{})
 	go func() {
@@ -101,10 +108,17 @@ func run(ctx context.Context, getenv func(string) (string, bool), stdout io.Writ
 	}()
 	defer func() { <-refreshed }() // runs before pool.Close, so no refresh is left using the pool
 
+	swept := make(chan struct{})
+	go func() {
+		defer close(swept)
+		keys.Run(ctx)
+	}()
+	defer func() { <-swept }() // before pool.Close, as for the routes refresh
+
 	api := httpapi.New(log, httpapi.Deps{
 		Models: routing{routes},
 		Routes: routing{routes},
-		Keys:   postgres.Keys{Pool: pool},
+		Keys:   keys,
 		Chat:   httpapi.ChatConfig{StatusHold: cfg.StatusHold, HeartbeatInterval: cfg.HeartbeatInterval, MaxBodyBytes: cfg.RequestMaxBytes},
 		Telemetry: httpapi.Telemetry{
 			Tracer:     tel.Tracer,
@@ -122,7 +136,12 @@ func run(ctx context.Context, getenv func(string) (string, bool), stdout io.Writ
 		return fmt.Errorf("listen: %w", err)
 	}
 	log.InfoContext(ctx, "listening", "addr", ln.Addr().String())
-	return serve(ctx, log, ln, srv, api.StartDraining, cfg.DrainDelay, cfg.ShutdownTimeout, tel.Shutdown)
+	// The last flush of last-used times waits until the server has stopped, so it has every request.
+	flush := func(ctx context.Context) error {
+		keys.Flush(ctx)
+		return tel.Shutdown(ctx)
+	}
+	return serve(ctx, log, ln, srv, api.StartDraining, cfg.DrainDelay, cfg.ShutdownTimeout, flush)
 }
 
 func buildVersion() string {
