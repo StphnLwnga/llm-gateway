@@ -183,6 +183,14 @@ func TestMigrateUpStatusDownUp(t *testing.T) {
 	}
 	app := openGatewayPool(t, d.App)
 	if err := postgres.Migrate(ctx, discard, dsn, "down"); err != nil {
+		t.Fatalf("migrate down the last-used times: %v", err)
+	}
+	var lastUsed bool
+	if err := pool.QueryRow(ctx, `SELECT to_regprocedure('public.touch_keys(uuid[])') IS NOT NULL
+		OR EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'api_keys' AND column_name = 'last_used_at')`).Scan(&lastUsed); err != nil || lastUsed {
+		t.Errorf("after migrate down touch_keys or last_used_at remains (%v, %v)", lastUsed, err)
+	}
+	if err := postgres.Migrate(ctx, discard, dsn, "down"); err != nil {
 		t.Fatalf("migrate down the tenants: %v", err)
 	}
 	var tenants bool

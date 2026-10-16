@@ -224,6 +224,65 @@ func TestOnlyTheAppRoleCanCallTheLookup(t *testing.T) {
 	}
 }
 
+func TestOnlyTheAppRoleCanTouchKeys(t *testing.T) {
+	t.Parallel()
+	d := newTenantsDB(t)
+	ctx := t.Context()
+	app := openGatewayPool(t, d.App)
+	if err := (postgres.Keys{Pool: app}).Touch(ctx, []string{d.idA}); err != nil {
+		t.Fatalf("app calling touch_keys: %v", err)
+	}
+	for name, sql := range map[string]string{
+		"read api_keys":   "SELECT last_used_at FROM api_keys",
+		"update api_keys": "UPDATE api_keys SET last_used_at = now()",
+	} {
+		if _, err := app.Exec(ctx, sql); !isPermissionDenied(err) {
+			t.Errorf("app can %s: %v, want permission denied", name, err)
+		}
+	}
+	for _, dsn := range []struct{ name, user, password string }{
+		{"admin", "gateway_admin", adminPassword},
+		{"reader", "reader", readerPassword},
+	} {
+		err := postgres.Keys{Pool: openPool(t, d.dsn(dsn.user, dsn.password))}.Touch(ctx, []string{d.idA})
+		if !isPermissionDenied(err) {
+			t.Errorf("%s calling touch_keys = %v, want permission denied", dsn.name, err)
+		}
+	}
+}
+
+func TestTouchNeverMovesTheLastUsedTimeBack(t *testing.T) {
+	t.Parallel()
+	d := newTenantsDB(t)
+	ctx := t.Context()
+	lastUsed := func(tenantID string) *time.Time {
+		t.Helper()
+		keys, err := d.admin.ListKeys(ctx, tenantID)
+		if err != nil || len(keys) != 1 {
+			t.Fatalf("ListKeys(%s) = %+v, %v", tenantID, keys, err)
+		}
+		return keys[0].LastUsedAt
+	}
+	if a := lastUsed(d.a); a != nil {
+		t.Fatalf("a new key has last_used_at %v, want none", a)
+	}
+	// A flush that started before another gateway's flush committed has an older now().
+	later := time.Now().Add(time.Hour).Truncate(time.Microsecond)
+	if _, err := d.admin.Pool.Exec(ctx, "UPDATE api_keys SET last_used_at = $1 WHERE id = $2", later, d.idB); err != nil {
+		t.Fatal(err)
+	}
+	before := time.Now()
+	if err := (postgres.Keys{Pool: openGatewayPool(t, d.App)}).Touch(ctx, []string{d.idA, d.idB}); err != nil {
+		t.Fatal(err)
+	}
+	if a := lastUsed(d.a); a == nil || a.Before(before.Add(-time.Minute)) || a.After(time.Now().Add(time.Minute)) {
+		t.Errorf("last_used_at of key a after a touch = %v, want about now", a)
+	}
+	if b := lastUsed(d.b); b == nil || !b.Equal(later) {
+		t.Errorf("last_used_at of key b = %v, want %v kept: a touch never moves the time back", b, later)
+	}
+}
+
 func TestCreateKeyRefusesADisabledTenant(t *testing.T) {
 	t.Parallel()
 	d := newTenantsDB(t)

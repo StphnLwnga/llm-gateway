@@ -32,11 +32,12 @@ type Tenant struct {
 
 // APIKey is one row of the api_keys table, without its hash.
 type APIKey struct {
-	ID        string
-	TenantID  string
-	Prefix    string
-	CreatedAt time.Time
-	RevokedAt *time.Time
+	ID         string
+	TenantID   string
+	Prefix     string
+	CreatedAt  time.Time
+	RevokedAt  *time.Time
+	LastUsedAt *time.Time
 }
 
 // Tenants manages tenants and their keys. It needs the admin role.
@@ -122,14 +123,14 @@ func (s Tenants) CreateKey(ctx context.Context, tenantID string) (APIKey, string
 
 // ListKeys returns the tenant's keys, oldest first.
 func (s Tenants) ListKeys(ctx context.Context, tenantID string) ([]APIKey, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT id::text, tenant_id::text, prefix, created_at, revoked_at
+	rows, err := s.Pool.Query(ctx, `SELECT id::text, tenant_id::text, prefix, created_at, revoked_at, last_used_at
 		FROM api_keys WHERE tenant_id = $1 ORDER BY id`, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("query keys: %w", err)
 	}
 	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (APIKey, error) {
 		var k APIKey
-		return k, row.Scan(&k.ID, &k.TenantID, &k.Prefix, &k.CreatedAt, &k.RevokedAt)
+		return k, row.Scan(&k.ID, &k.TenantID, &k.Prefix, &k.CreatedAt, &k.RevokedAt, &k.LastUsedAt)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("read keys: %w", err)
@@ -165,6 +166,14 @@ func (k Keys) Lookup(ctx context.Context, hash []byte) (tenant.Identity, error) 
 		return tenant.Identity{}, fmt.Errorf("look up key: %w", err)
 	}
 	return id, nil
+}
+
+// Touch sets the last-used time of each key to now. It never moves a time back.
+func (k Keys) Touch(ctx context.Context, keyIDs []string) error {
+	if _, err := k.Pool.Exec(ctx, "SELECT touch_keys($1::uuid[])", keyIDs); err != nil {
+		return fmt.Errorf("touch keys: %w", err)
+	}
+	return nil
 }
 
 // InTenant runs fn in a transaction where row-level security shows only the
