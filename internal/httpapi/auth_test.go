@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -16,6 +18,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
+	"github.com/StphnLwnga/llm-gateway/internal/authcache"
 	"github.com/StphnLwnga/llm-gateway/internal/telemetry"
 	"github.com/StphnLwnga/llm-gateway/internal/tenant"
 )
@@ -37,6 +40,11 @@ func (k *countingKeys) Lookup(ctx context.Context, hash []byte) (tenant.Identity
 	}
 	return FakeKeys{}.Lookup(ctx, hash)
 }
+
+// touchingKeys is FakeKeys with the Touch the auth cache needs.
+type touchingKeys struct{ FakeKeys }
+
+func (touchingKeys) Touch(context.Context, []string) error { return nil }
 
 func request(t *testing.T, h http.Handler, method, path, authorization string) *httptest.ResponseRecorder {
 	t.Helper()
@@ -160,9 +168,14 @@ func TestAuthIsTracedAndCountedAndTheKeyNeverLeaks(t *testing.T) {
 		_ = mp.Shutdown(context.Background())
 	})
 	var logs strings.Builder
-	h := New(telemetry.NewLogger(&logs, slog.LevelDebug, "json"), Deps{
+	log := telemetry.NewLogger(&logs, slog.LevelDebug, "json")
+	cache, err := authcache.New(touchingKeys{}, time.Minute, log, mp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := New(log, Deps{
 		Routes:    routes{"down": {{ProviderName: "down", Provider: unavailable{}}}},
-		Keys:      FakeKeys{},
+		Keys:      cache,
 		Telemetry: Telemetry{Tracer: tp, Meter: mp, ServerAddr: "llm-gateway:8080"},
 	})
 	unknown, err := tenant.NewKey()
@@ -177,10 +190,13 @@ func TestAuthIsTracedAndCountedAndTheKeyNeverLeaks(t *testing.T) {
 	if w.Code != http.StatusBadGateway {
 		t.Fatalf("chat with the upstream down = %d, want 502", w.Code)
 	}
+	if hit := request(t, h, http.MethodGet, "/v1/models", "Bearer "+FakeKey); hit.Code != http.StatusOK {
+		t.Fatalf("GET /v1/models with the key cached = %d, want 200", hit.Code)
+	}
 
 	ended := spans.Ended()
-	if len(ended) != 2 {
-		t.Fatalf("recorded %d spans, want 2", len(ended))
+	if len(ended) != 3 {
+		t.Fatalf("recorded %d spans, want 3", len(ended))
 	}
 	rejected, served := attrsOf(ended[0].Attributes()), attrsOf(ended[1].Attributes())
 	if rejected["http.response.status_code"] != "401" || rejected["http.route"] != "/v1/models" {
@@ -198,12 +214,16 @@ func TestAuthIsTracedAndCountedAndTheKeyNeverLeaks(t *testing.T) {
 		t.Fatal(err)
 	}
 	var counted401 uint64
+	seen := map[string]bool{}
+	hash := tenant.HashKey(FakeKey)
 	for _, sm := range rm.ScopeMetrics {
 		for _, m := range sm.Metrics {
+			seen[m.Name] = true
 			for _, set := range metricAttrSets(m) {
 				for k, v := range attrsOf(set) {
-					if strings.Contains(k, "tenant") || v == FakeIdentity.TenantID || v == FakeIdentity.KeyID {
-						t.Errorf("metric %s carries %s = %q; a tenant on a metric is a new series per tenant", m.Name, k, v)
+					if strings.Contains(k, "tenant") || v == FakeIdentity.TenantID || v == FakeIdentity.KeyID ||
+						v == string(hash) || v == hex.EncodeToString(hash) {
+						t.Errorf("metric %s carries %s = %q; a tenant, key ID or key hash on a metric is a new series per caller", m.Name, k, v)
 					}
 				}
 			}
@@ -218,6 +238,11 @@ func TestAuthIsTracedAndCountedAndTheKeyNeverLeaks(t *testing.T) {
 	}
 	if counted401 != 1 {
 		t.Errorf("http.server.request.duration counted %d requests with status 401, want 1", counted401)
+	}
+	for _, name := range []string{"llm_gateway.auth.failures", "llm_gateway.auth.cache.lookups", "llm_gateway.auth.cache.size", "llm_gateway.auth.lookup.duration"} {
+		if !seen[name] {
+			t.Errorf("no %s recorded, so the check above did not cover it", name)
+		}
 	}
 	if got := authFailures(t, reader); len(got) != 1 || got["no_active_key"] != 1 {
 		t.Errorf("llm_gateway.auth.failures = %v, want 1 with reason no_active_key and none for the accepted key", got)
@@ -299,6 +324,10 @@ func metricAttrSets(m metricdata.Metrics) [][]attribute.KeyValue {
 			out = append(out, p.Attributes.ToSlice())
 		}
 	case metricdata.Sum[int64]:
+		for _, p := range d.DataPoints {
+			out = append(out, p.Attributes.ToSlice())
+		}
+	case metricdata.Gauge[int64]:
 		for _, p := range d.DataPoints {
 			out = append(out, p.Attributes.ToSlice())
 		}

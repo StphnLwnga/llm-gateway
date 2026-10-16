@@ -30,6 +30,7 @@ The gateway takes the OpenAI request shape, so an OpenAI SDK needs only a new ba
 │   ├── gateway/             the HTTP server: composition root, graceful shutdown
 │   └── gatewayctl/          admin commands: migrations, routes, tenants and API keys
 ├── internal/
+│   ├── authcache/           API keys served from memory for a bounded time, and batched last-used times
 │   ├── config/              settings parsed into typed values, with secret redaction
 │   ├── fakeupstream/        a fake OpenAI chat completions server with fault modes
 │   ├── httpapi/             endpoints, API key checks, readiness checks, the OpenAI error shape
