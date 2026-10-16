@@ -74,7 +74,10 @@ func TestEveryKeyFailureGetsTheSame401(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var logs strings.Builder
 			keys := &countingKeys{}
-			h := New(slog.New(slog.NewTextHandler(&logs, nil)), Deps{Keys: keys})
+			reader := sdkmetric.NewManualReader()
+			mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+			t.Cleanup(func() { _ = mp.Shutdown(context.Background()) })
+			h := New(slog.New(slog.NewTextHandler(&logs, nil)), Deps{Keys: keys, Telemetry: Telemetry{Meter: mp}})
 			w := request(t, h, http.MethodGet, "/v1/models", tc.authorization)
 			if w.Code != http.StatusUnauthorized || w.Header().Get("WWW-Authenticate") != "Bearer" {
 				t.Errorf("status %d, WWW-Authenticate %q; want 401 and Bearer", w.Code, w.Header().Get("WWW-Authenticate"))
@@ -85,6 +88,9 @@ func TestEveryKeyFailureGetsTheSame401(t *testing.T) {
 			}
 			if !strings.Contains(logs.String(), "reason="+tc.reason) {
 				t.Errorf("log does not record reason %s:\n%s", tc.reason, logs.String())
+			}
+			if got := authFailures(t, reader); len(got) != 1 || got[tc.reason] != 1 {
+				t.Errorf("llm_gateway.auth.failures = %v, want 1 with reason %s", got, tc.reason)
 			}
 		})
 	}
@@ -213,6 +219,9 @@ func TestAuthIsTracedAndCountedAndTheKeyNeverLeaks(t *testing.T) {
 	if counted401 != 1 {
 		t.Errorf("http.server.request.duration counted %d requests with status 401, want 1", counted401)
 	}
+	if got := authFailures(t, reader); len(got) != 1 || got["no_active_key"] != 1 {
+		t.Errorf("llm_gateway.auth.failures = %v, want 1 with reason no_active_key and none for the accepted key", got)
+	}
 
 	var recorded strings.Builder
 	for _, s := range ended {
@@ -253,6 +262,33 @@ func TestRequestLogLinesCarryTheTenantAndKey(t *testing.T) {
 			t.Errorf("log line has no tenant_id and key_id: %s", l)
 		}
 	}
+}
+
+// authFailures returns llm_gateway.auth.failures by reason. A point with
+// any other attribute is recorded under its attributes, so the caller sees it.
+func authFailures(t *testing.T, reader *sdkmetric.ManualReader) map[string]int64 {
+	t.Helper()
+	var rm metricdata.ResourceMetrics
+	if err := reader.Collect(t.Context(), &rm); err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]int64{}
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			if m.Name != "llm_gateway.auth.failures" {
+				continue
+			}
+			for _, p := range m.Data.(metricdata.Sum[int64]).DataPoints {
+				attrs := attrsOf(p.Attributes.ToSlice())
+				if reason, ok := attrs["llm_gateway.auth.reason"]; ok && len(attrs) == 1 {
+					out[reason] += p.Value
+				} else {
+					out[p.Attributes.Encoded(attribute.DefaultEncoder())] += p.Value
+				}
+			}
+		}
+	}
+	return out
 }
 
 func metricAttrSets(m metricdata.Metrics) [][]attribute.KeyValue {

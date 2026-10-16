@@ -18,6 +18,8 @@ import (
 	"github.com/StphnLwnga/llm-gateway/internal/provider"
 )
 
+const scope = "github.com/StphnLwnga/llm-gateway/internal/httpapi"
+
 // Probes get metrics but no spans (ADR 0016): a probe trace has no debugging
 // value, and a failing readiness check must still show in the metrics.
 var untracedPaths = map[string]bool{"/healthz": true, "/readyz": true}
@@ -87,7 +89,7 @@ func newChatMetrics(mp metric.MeterProvider) (chatMetrics, error) {
 	if mp == nil {
 		mp = otel.GetMeterProvider()
 	}
-	m := mp.Meter("github.com/StphnLwnga/llm-gateway/internal/httpapi")
+	m := mp.Meter(scope)
 	var c chatMetrics
 	var errs [4]error
 	c.commits, errs[0] = m.Int64Counter("llm_gateway.chat.stream.commits", metric.WithUnit("{stream}"),

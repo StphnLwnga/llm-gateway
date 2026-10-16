@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"strings"
 
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/StphnLwnga/llm-gateway/internal/tenant"
@@ -39,6 +41,7 @@ func (h *Handler) requireKey(next http.HandlerFunc) http.HandlerFunc {
 		id, err := h.authenticate(r)
 		if reason := authFailure(err); reason != "" {
 			h.log.WarnContext(r.Context(), "authentication failed", "reason", reason, "method", r.Method, "path", r.URL.Path)
+			h.authFailures.Add(r.Context(), 1, metric.WithAttributes(attribute.String("llm_gateway.auth.reason", reason)))
 			w.Header().Set("WWW-Authenticate", "Bearer")
 			code := "invalid_api_key"
 			writeJSON(w, http.StatusUnauthorized, errorEnvelope{Error: errorBody{
@@ -91,4 +94,12 @@ func authFailure(err error) string {
 		return "no_active_key"
 	}
 	return ""
+}
+
+func newAuthFailures(mp metric.MeterProvider) (metric.Int64Counter, error) {
+	if mp == nil {
+		mp = otel.GetMeterProvider()
+	}
+	return mp.Meter(scope).Int64Counter("llm_gateway.auth.failures", metric.WithUnit("{request}"),
+		metric.WithDescription("Requests rejected with a 401, by the reason the key was not accepted."))
 }

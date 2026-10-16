@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"sync/atomic"
 	"time"
+
+	"go.opentelemetry.io/otel/metric"
 )
 
 // Checker is one readiness check.
@@ -40,6 +42,8 @@ type Handler struct {
 	mux      *http.ServeMux
 	handler  http.Handler
 	metrics  chatMetrics
+
+	authFailures metric.Int64Counter
 }
 
 // Deps are the parts the handler serves from. A nil Models lists nothing,
@@ -71,6 +75,9 @@ func New(log *slog.Logger, deps Deps, checks ...Checker) *Handler {
 	var err error
 	if h.metrics, err = newChatMetrics(deps.Telemetry.Meter); err != nil {
 		log.Warn("chat metrics are incomplete", "err", err)
+	}
+	if h.authFailures, err = newAuthFailures(deps.Telemetry.Meter); err != nil {
+		log.Warn("the auth failure metric is incomplete", "err", err)
 	}
 	return h
 }
