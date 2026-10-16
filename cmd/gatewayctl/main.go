@@ -46,7 +46,7 @@ Commands:
   tenants list     print every tenant
   tenants disable  stop every key of the tenant from working; the tenant is kept
   keys create      create an API key for the tenant and print it once
-  keys list        print the tenant's keys, by prefix only
+  keys list        print the tenant's keys, by prefix only, with when each was last used
   keys revoke      stop the key from working; the record is kept
 
 Settings come from the environment. DATABASE_URL is required.
@@ -297,9 +297,9 @@ func printTenants(w io.Writer, tenants []postgres.Tenant) error {
 
 func printKeys(w io.Writer, keys []postgres.APIKey) error {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "ID\tPREFIX\tCREATED\tREVOKED")
+	_, _ = fmt.Fprintln(tw, "ID\tPREFIX\tCREATED\tREVOKED\tLAST USED")
 	for _, k := range keys {
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", k.ID, k.Prefix, timestamp(&k.CreatedAt), timestamp(k.RevokedAt))
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", k.ID, k.Prefix, timestamp(&k.CreatedAt), timestamp(k.RevokedAt), timestamp(k.LastUsedAt))
 	}
 	return tw.Flush()
 }
