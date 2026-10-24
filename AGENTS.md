@@ -20,6 +20,42 @@ design is in `docs/design.md` and the decisions are in `docs/adr/`.
 - No commit trailers, and no `Co-Authored-By`.
 - One purpose per commit. A formatting change goes in its own commit.
 
+## Pull requests
+
+- **Title:** a plain sentence saying the outcome, for example "Stream chat
+  completions from Groq, OpenAI and Ollama through one endpoint". Not
+  `feat(...)` style. No file, variable, command or code names, and no
+  contractions.
+- **Body:** `.github/pull_request_template.md`: Summary, Test plan, Docs,
+  Checklist.
+  - Write it for someone who has not read the design. Say what changes and
+    why in plain words. A milestone or decision number (S02, ADR 0016) is
+    never the explanation.
+  - **Write in ASD-STE100 Simplified Technical English.** At most 20 words in
+    an instruction and 25 in a description. Active voice, present tense, one
+    idea per sentence, articles kept. Use the same word for the same thing
+    every time. No contractions, no em dashes and no en dashes.
+  - **Name no identifiers in the prose:** no files, folders, packages, types,
+    functions, variables, settings, tables, columns, migrations, milestone
+    numbers or decision numbers. Say what the thing is: "the router", "the
+    configuration document", "the routes table". An identifier appears only
+    where a reader must type or find it, such as a command or a setting, and
+    a body has at most one. Product names are fine: Go, OpenAI, Groq, Ollama,
+    Postgres, OpenTelemetry.
+  - Summary: one short paragraph, then one bullet per outcome, each opening
+    with the outcome in bold.
+  - Test plan: each line is a behavior that was checked, ticked when it
+    passed. No test file paths. The result of the checks is one line of
+    numbers: "The checks before every commit pass on Go 1.26.10: 183 tests
+    and 224 subtests in 18 packages, 0 lint issues."
+  - Before every `gh pr create` or `gh pr edit`, write the body to a file and
+    run `go run ./tools/prbody <file>` from the repo root. Fix each problem it
+    lists. After you post, read the live body back with `gh pr view` and
+    check it again. The check cannot judge plain words or one idea per
+    sentence, so read the body too. `tools/prbody/testdata/model.md` is the
+    model.
+  - No "Generated with" footer and no session link.
+
 ## Writing
 
 - No em dashes in any file. Use a comma, a colon or a full stop.
@@ -28,7 +64,8 @@ design is in `docs/design.md` and the decisions are in `docs/adr/`.
 
 - **Layout.** `cmd/<binary>` holds each entry point. `internal/<component>`
   holds one package per component (config, telemetry, provider, router, and
-  so on), not one package per layer. An interface is defined in the package
+  so on), not one package per layer. `tools/<name>` holds a tool for working
+  on the repo, which no image ships. An interface is defined in the package
   that uses it, not in the package that implements it.
 - **Errors.** Every error response uses the OpenAI error shape:
   `{"error": {"message", "type", "param", "code"}}`. Packages return
