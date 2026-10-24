@@ -29,7 +29,7 @@ design is in `docs/design.md` and the decisions are in `docs/adr/`.
 - **Body:** `.github/pull_request_template.md`: Summary, Test plan, Docs,
   Checklist.
   - Write it for someone who has not read the design. Say what changes and
-    why in plain words. A milestone or decision number (S02, ADR 0016) is
+    why in plain words. A milestone or decision number (M3, ADR 0016) is
     never the explanation.
   - **Write in ASD-STE100 Simplified Technical English.** At most 20 words in
     an instruction and 25 in a description. Active voice, present tense, one
