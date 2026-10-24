@@ -84,6 +84,26 @@ func TestADriftingBodyIsCaughtLineByLine(t *testing.T) {
 	})
 }
 
+func TestTheFooterASessionLinkAndATrailerAreProblems(t *testing.T) {
+	body := lines(
+		"The gateway stays the same.",
+		"",
+		"\U0001F916 Generated with [Claude Code](https://claude.com/claude-code)",
+		"",
+		"https://claude.ai/code/session_01AbCdEf",
+		"",
+		"Co-Authored-By: Claude <noreply@anthropic.com>",
+		"claude-session: https://example.com/a",
+	)
+	expect(t, problems(body, ""), []string{
+		"line 3: the tool footer or a session link",
+		"line 5: the tool footer or a session link",
+		"line 7: a commit trailer; a body has none",
+		`line 7: "anthropic.com": an identifier in the prose; say what it is`,
+		"line 8: a commit trailer; a body has none",
+	})
+}
+
 func TestTemplateLinesPassAndTheTextAfterThemIsChecked(t *testing.T) {
 	tmpl := template(t)
 	line := "- [x] README or docs/ updated in this PR for any change to routes, settings, packages, behavior or measurements."

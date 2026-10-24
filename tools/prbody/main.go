@@ -40,6 +40,7 @@ var rules = []rule{
 		"a contraction",
 	},
 	{regexp.MustCompile(`Generated with|claude\.ai/code`), "the tool footer or a session link"},
+	{regexp.MustCompile(`(?i)^(?:co-authored-by|claude-session):`), "a commit trailer; a body has none"},
 }
 
 // Code-like words outside backticks: file names, camelCase, PascalCase,
