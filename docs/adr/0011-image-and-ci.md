@@ -46,7 +46,7 @@ Chosen: full SHA pins with Dependabot weekly for GitHub Actions, Go modules and 
 
 The same reasoning covers the base images and the update timing:
 
-- **Base images by digest.** A digest is immutable. A tag such as `golang:1.26.9-bookworm` can be pushed again with other contents, and the next build would use them. The Dockerfile pins each base image as `tag@sha256:...`: the tag stays for readability, and the digest decides what is pulled. Dependabot's `docker` ecosystem updates the digest.
+- **Base images by digest.** A digest is immutable. A tag such as `golang:1.26.10-bookworm` can be pushed again with other contents, and the next build would use them. The Dockerfile pins each base image as `tag@sha256:...`: the tag stays for readability, and the digest decides what is pulled. Dependabot's `docker` ecosystem updates the digest.
 - **A 7-day cooldown.** Dependabot opens a version update only when the version is at least 7 days old. Malicious releases are often found and pulled within hours: litellm 1.82.7 and 1.82.8 on PyPI were live on 2026-03-24 for about 40 minutes before PyPI quarantined them. Security updates are not delayed, because the cooldown does not apply to them. The cost: normal fixes arrive 7 days later.
 
 ## D3: integration tests in CI
@@ -65,7 +65,7 @@ Chosen: one race job with testcontainers. The tests skip without Docker locally,
 - Jobs: lint (`gofmt -l`, `go mod tidy -diff`, `go vet`, golangci-lint v2.14.0), test, vuln (`govulncheck` v1.9.0), image (`docker build`, no push). They run in parallel. The first green run took about 70 s wall clock.
 - `permissions: contents: read`, so the job token cannot push.
 - `concurrency` with `cancel-in-progress`, so a new push to the same ref cancels the old run.
-- **Toolchain pin.** `go.mod` has `go 1.26.0` and `toolchain go1.26.9`, and the Docker builder is `golang:1.26.9-bookworm`. govulncheck found 12 reachable standard-library vulnerabilities in go1.26.4, all fixed by 1.26.9. setup-go reads the `toolchain` line, and with `GOTOOLCHAIN=auto` an older local Go switches to 1.26.9.
+- **Toolchain pin.** `go.mod` has `go 1.26.0` and `toolchain go1.26.10`, and the Docker builder is `golang:1.26.10-bookworm`. govulncheck found 12 reachable standard-library vulnerabilities in go1.26.4, all fixed by 1.26.9, and then GO-2026-6809 in `crypto/x509` in go1.26.9, fixed by 1.26.10. setup-go reads the `toolchain` line, and with `GOTOOLCHAIN=auto` an older local Go switches to 1.26.10.
 - `readme_test.go` fails when a setting, a route or a package folder is missing from the docs. Settings are checked in `docs/configuration.md`, routes in `docs/api.md`, and packages in the README project layout. Each item must start its own line, so a mention in another row does not count.
 
 ## Consequences
