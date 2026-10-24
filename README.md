@@ -34,6 +34,7 @@ The gateway takes the OpenAI request shape, so an OpenAI SDK needs only a new ba
 │   ├── config/              settings parsed into typed values, with secret redaction
 │   ├── fakeupstream/        a fake OpenAI chat completions server with fault modes
 │   ├── httpapi/             endpoints, API key checks, readiness checks, the OpenAI error shape
+│   ├── keyvault/            envelope encryption of secrets at rest, with a file-based KEK keyring
 │   ├── money/               exact US dollar amounts in micro-dollars
 │   ├── provider/            the provider contract, typed upstream errors, the upstream HTTP client
 │   │   ├── ollama/          the adapter for Ollama's native chat API
