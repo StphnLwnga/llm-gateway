@@ -101,19 +101,22 @@ func run(ctx context.Context, getenv func(string) (string, bool), stdout io.Writ
 	}
 
 	routes := router.New(postgres.Routes{Pool: pool}, registry, cfg.RoutesRefreshInterval, log)
+	loops, stopLoops := context.WithCancel(ctx)
 	refreshed := make(chan struct{})
 	go func() {
 		defer close(refreshed)
-		routes.Run(ctx)
+		routes.Run(loops)
 	}()
 	defer func() { <-refreshed }() // runs before pool.Close, so no refresh is left using the pool
 
 	swept := make(chan struct{})
 	go func() {
 		defer close(swept)
-		keys.Run(ctx)
+		keys.Run(loops)
 	}()
 	defer func() { <-swept }() // before pool.Close, as for the routes refresh
+	// Runs before the waits above, so an early return such as a listen error does not wait for a signal.
+	defer stopLoops()
 
 	api := httpapi.New(log, httpapi.Deps{
 		Models: routing{routes},

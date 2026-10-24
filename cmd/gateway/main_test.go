@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // env returns a lookup backed by a map. It stands in for the process environment.
@@ -109,5 +111,28 @@ func TestRunEnablesProvidersWithKeysAndNeverLogsTheKeys(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("logs miss %s:\n%s", want, out)
 		}
+	}
+}
+
+func TestRunReturnsTheListenErrorWithoutASignal(t *testing.T) {
+	t.Parallel()
+	var lc net.ListenConfig
+	taken, err := lc.Listen(t.Context(), "tcp", ":0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = taken.Close() })
+	port := strconv.Itoa(taken.Addr().(*net.TCPAddr).Port)
+
+	vars := map[string]string{"PORT": port, "DATABASE_URL": "postgres://gw:pw@127.0.0.1:1/gateway"}
+	done := make(chan error, 1)
+	go func() { done <- run(t.Context(), env(vars), io.Discard) }()
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "listen") {
+			t.Errorf("run = %v, want the listen error", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("run did not return within 5 s of the listen error")
 	}
 }
