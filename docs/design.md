@@ -253,7 +253,7 @@ What happens when each dependency fails, and what the client sees.
 | Error bodies | A 5xx returns a fixed message; the full error goes to the log. The client message never comes from `err.Error()`. | Built (M0) |
 | Usage and request logs | `usage.v1` carries no prompt content. `requestlog.v1` is opt-in and redacted before it is produced, with the same PII redaction as the guards. | Planned (M6, M10) |
 | Tenant isolation | Application checks plus row-level security (section 4). | Built (M3) for `tenants` and `api_keys`. Planned for the tenant tables of later milestones. |
-| Supply chain | Distroless static non-root image. Actions pinned by full commit SHA, with Dependabot weekly. `govulncheck` and gosec in CI. The Go toolchain pinned to a patch release with the known fixes. The CI token is read-only. | Built (M0), [0011](adr/0011-image-and-ci.md) |
+| Supply chain | Distroless static non-root image. Actions pinned by full commit SHA and base images by digest, with Dependabot weekly and a 7-day cooldown. `govulncheck` and gosec in CI. The Go toolchain pinned to a patch release with the known fixes. The CI token is read-only. | Built (M0), [0011](adr/0011-image-and-ci.md) |
 
 ## 7. Operations
 

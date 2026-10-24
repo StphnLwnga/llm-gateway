@@ -42,7 +42,12 @@ Chosen: `standard` plus the six. Settings in `.golangci.yml`:
 | Full commit SHA with a `# vX.Y.Z` comment, plus Dependabot | Immutable: GitHub's guide calls a full-length SHA "currently the only way to use an action as an immutable release". Dependabot opens a pull request for each new version, and CI runs on it. | A pinned SHA never updates by itself; Dependabot pull requests must be reviewed. |
 | Fork or vendor each action | Full control. | Every update is manual work. |
 
-Chosen: full SHA pins with Dependabot weekly for GitHub Actions and Go modules. For an annotated tag, pin the commit the tag points to (`refs/tags/vX.Y.Z^{}`), not the tag object.
+Chosen: full SHA pins with Dependabot weekly for GitHub Actions, Go modules and the Docker base images, each with a 7-day cooldown. For an annotated tag, pin the commit the tag points to (`refs/tags/vX.Y.Z^{}`), not the tag object.
+
+The same reasoning covers the base images and the update timing:
+
+- **Base images by digest.** A digest is immutable. A tag such as `golang:1.26.9-bookworm` can be pushed again with other contents, and the next build would use them. The Dockerfile pins each base image as `tag@sha256:...`: the tag stays for readability, and the digest decides what is pulled. Dependabot's `docker` ecosystem updates the digest.
+- **A 7-day cooldown.** Dependabot opens a version update only when the version is at least 7 days old. Malicious releases are often found and pulled within hours: litellm 1.82.7 and 1.82.8 on PyPI were live on 2026-03-24 for about 40 minutes before PyPI quarantined them. Security updates are not delayed, because the cooldown does not apply to them. The cost: normal fixes arrive 7 days later.
 
 ## D3: integration tests in CI
 
@@ -68,7 +73,8 @@ Chosen: one race job with testcontainers. The tests skip without Docker locally,
 - Good: a red check blocks a merge once the `main` ruleset requires the four jobs.
 - Good: a vulnerable dependency or toolchain fails CI only when the code can reach the vulnerable function.
 - Bad: debugging inside the runtime container needs an ephemeral debug container.
-- Bad: Dependabot pull requests add review work every week.
+- Bad: Dependabot pull requests add review work every week, including one more for the base images.
+- Bad: with the cooldown, non-security updates arrive 7 days after their release.
 
 ## Links
 
@@ -76,6 +82,8 @@ Chosen: one race job with testcontainers. The tests skip without Docker locally,
 - golangci-lint linters: https://golangci-lint.run/docs/linters/
 - gosec rules: https://github.com/securego/gosec/blob/master/RULES.md
 - GitHub, secure use of Actions: https://docs.github.com/en/actions/reference/security/secure-use
+- Dependabot options reference: https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference
+- LiteLLM security update, March 2026: https://docs.litellm.ai/blog/security-update-march-2026
 - Go toolchains: https://go.dev/doc/toolchain
 - govulncheck tutorial: https://go.dev/doc/tutorial/govulncheck
 - testcontainers for Go: https://golang.testcontainers.org/

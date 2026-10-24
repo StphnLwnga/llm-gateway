@@ -153,7 +153,7 @@ Every pull request and every push to `main` runs four jobs in GitHub Actions (`.
 | A fake provider directive | [fake-provider.md](fake-provider.md) |
 | A Go package folder | The README project layout |
 
-Actions are pinned by commit SHA. Dependabot proposes updates to actions and Go modules weekly. A new push to the same branch cancels the run in progress.
+Actions are pinned by commit SHA, and base images by digest. Dependabot proposes updates to actions, Go modules and base images weekly, once a version is 7 days old. The 7-day wait does not apply to security updates. A new push to the same branch cancels the run in progress.
 
 ## Makefile
 
