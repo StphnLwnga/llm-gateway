@@ -90,7 +90,7 @@ func New(store Store, ttl time.Duration, log *slog.Logger, mp metric.MeterProvid
 	c.duration, errs[1] = m.Float64Histogram("llm_gateway.auth.lookup.duration", metric.WithUnit("s"),
 		metric.WithDescription("Time of one API key lookup in Postgres."),
 		metric.WithExplicitBucketBoundaries(lookupBuckets...))
-	_, errs[2] = m.Int64ObservableGauge("llm_gateway.auth.cache.size", metric.WithUnit("{entry}"),
+	_, errs[2] = m.Int64ObservableUpDownCounter("llm_gateway.auth.cache.size", metric.WithUnit("{entry}"),
 		metric.WithDescription("API keys held in the auth cache, expired ones included until the sweep removes them."),
 		metric.WithInt64Callback(func(_ context.Context, o metric.Int64Observer) error {
 			c.mu.Lock()

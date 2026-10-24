@@ -327,10 +327,6 @@ func metricAttrSets(m metricdata.Metrics) [][]attribute.KeyValue {
 		for _, p := range d.DataPoints {
 			out = append(out, p.Attributes.ToSlice())
 		}
-	case metricdata.Gauge[int64]:
-		for _, p := range d.DataPoints {
-			out = append(out, p.Attributes.ToSlice())
-		}
 	}
 	return out
 }

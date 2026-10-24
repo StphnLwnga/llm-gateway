@@ -133,14 +133,14 @@ func (m metered) collect(t *testing.T) map[string]metricdata.Metrics {
 	return out
 }
 
-// size is the llm_gateway.auth.cache.size gauge.
+// size is the llm_gateway.auth.cache.size up-down counter.
 func (m metered) size(t *testing.T) int64 {
 	t.Helper()
-	g, ok := m.collect(t)["llm_gateway.auth.cache.size"].Data.(metricdata.Gauge[int64])
-	if !ok || len(g.DataPoints) != 1 {
-		t.Fatalf("llm_gateway.auth.cache.size = %+v, want one point", g)
+	s, ok := m.collect(t)["llm_gateway.auth.cache.size"].Data.(metricdata.Sum[int64])
+	if !ok || s.IsMonotonic || len(s.DataPoints) != 1 {
+		t.Fatalf("llm_gateway.auth.cache.size = %+v, want one point of a non-monotonic sum", s)
 	}
-	return g.DataPoints[0].Value
+	return s.DataPoints[0].Value
 }
 
 // lookups is llm_gateway.auth.cache.lookups by result.

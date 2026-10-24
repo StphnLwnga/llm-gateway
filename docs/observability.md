@@ -127,7 +127,7 @@ These metrics describe a chat request as the client sees it. Failures are counte
 |---|---|---|---|---|
 | `llm_gateway.auth.failures` | counter | `{request}` | `llm_gateway.auth.reason`: `missing`, `not_bearer`, `malformed`, `bad_checksum` or `no_active_key` | Each request rejected with a 401. Counted with the auth cache on or off |
 | `llm_gateway.auth.cache.lookups` | counter | `{lookup}` | `llm_gateway.cache.result`: `hit` or `miss` | Each key that passed the format and checksum checks, by whether it was in the auth cache. Nothing when `AUTH_CACHE_TTL` is 0 |
-| `llm_gateway.auth.cache.size` | gauge | `{entry}` | none | The keys in the auth cache, expired ones included until the sweep each minute |
+| `llm_gateway.auth.cache.size` | up-down counter | `{entry}` | none | The keys in the auth cache, expired ones included until the sweep each minute |
 | `llm_gateway.auth.lookup.duration` | histogram | `s` | none | Each key lookup in Postgres: a cache miss, or every check when the cache is off. Shared lookups count once. Buckets from 0.1 ms to 2.5 s |
 
 Prometheus stores the names with underscores and a unit suffix, for example `gen_ai_client_inference_duration_seconds` and `llm_gateway_chat_stream_commits_total`.
