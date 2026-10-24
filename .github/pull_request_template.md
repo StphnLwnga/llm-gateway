@@ -14,3 +14,4 @@
 - [ ] One purpose per commit (formatting changes in their own commit)
 - [ ] Comments say why, only where the code cannot (AGENTS.md)
 - [ ] CI is green
+- [ ] `go run ./tools/prbody` passes on this body, and it reads as plain ASD-STE100 with no identifiers in the prose

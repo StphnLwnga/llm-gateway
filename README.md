@@ -65,6 +65,8 @@ The gateway takes the OpenAI request shape, so an OpenAI SDK needs only a new ba
 │   │   ├── overhead.js      one overhead case
 │   │   └── ollama-ttft.js   streamed requests to a local model, at a fixed concurrency
 │   └── run.sh               runs every overhead case and prints the tables
+├── tools/
+│   └── prbody/              checks a pull request body against the rules in AGENTS.md
 ├── .github/                 CI workflow, Dependabot, pull request template
 ├── .golangci.yml            lint settings
 └── readme_test.go           fails when the docs miss a setting, endpoint, package or fake directive
