@@ -47,7 +47,7 @@ func TestADriftingBodyIsCaughtLineByLine(t *testing.T) {
 		"",
 		"- **S03 adds budgets.** The router reads `internal/router/router.go` and the tenant_id column sets the budgetCents value.",
 		"- The request starts when the client sends a prompt, and then the gateway picks a provider and the provider sends the reply to the client over one open stream.",
-		"- It doesn't change the API \u2014 nothing else.",
+		"- It doesn't change the API in M3 \u2014 nothing else.",
 		"- The notes in docs/ and in internal/router/ say how. Light/dark and read/write are prose.",
 		"- The RateLimiter type, the DATABASE_URL setting, errors.Is and budgets.tenant change.",
 		"- See ADR 0016 and internal/config for the rule.",
@@ -68,6 +68,7 @@ func TestADriftingBodyIsCaughtLineByLine(t *testing.T) {
 		`line 3: "tenant_id": an identifier in the prose; say what it is`,
 		"line 4: a sentence of 29 words; the most is 25",
 		"line 5: an em or en dash",
+		"line 5: a plan code",
 		"line 5: a contraction",
 		`line 6: "docs/": an identifier in the prose; say what it is`,
 		`line 6: "internal/router/": an identifier in the prose; say what it is`,
@@ -111,6 +112,20 @@ func TestTildeFencesAndIndentedBlocksAreCodeBlocks(t *testing.T) {
 	expect(t, problems("- The first item.\n\n    It goes on with tenant_id.\n\n```\nmake up\n```", ""), []string{
 		`line 3: "tenant_id": an identifier in the prose; say what it is`,
 	})
+}
+
+func TestMilestoneNumbersArePlanCodes(t *testing.T) {
+	expect(t, problems("This finishes M3, and M4 adds the cache.", ""), []string{"line 1: a plan code"})
+	expect(t, problems("The gateway uses 3 MB of memory.", ""), nil)
+}
+
+func TestAFenceClosesOnARunAsLongAsItsOpeningRun(t *testing.T) {
+	expect(t, problems("````\n```\nmake up\n```\n````\n\nIt doesn't change.", ""), []string{
+		"line 7: a contraction",
+	})
+	// A backtick after the opening run makes it prose, so the lines after it
+	// are checked.
+	expect(t, problems("```x`\nIt doesn't change.", ""), []string{"line 2: a contraction"})
 }
 
 func TestACodeBlockThatIsNotClosedIsAProblem(t *testing.T) {

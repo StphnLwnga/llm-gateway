@@ -34,7 +34,7 @@ type rule struct {
 
 var rules = []rule{
 	{regexp.MustCompile(`[\x{2014}\x{2013}]`), "an em or en dash"},
-	{regexp.MustCompile(`\bS\d{2}[a-z]?\b|\bADR[ -]?\d{4}\b`), "a plan code"},
+	{regexp.MustCompile(`\bS\d{2}[a-z]?\b|\bM\d{1,2}\b|\bADR[ -]?\d{4}\b`), "a plan code"},
 	{
 		regexp.MustCompile(`(?i)\b\w+n['’]t\b|\b\w+['’](?:re|ll|ve|m|d)\b|\b(?:it|that|there|what|here|who|let|he|she|where|how|when|why)['’]s\b`),
 		"a contraction",
@@ -72,6 +72,7 @@ var (
 	marker     = regexp.MustCompile(`^#+ |^(?:[-*+]|\d+[.)]) (?:\[ \] )?`)
 	quoteMark  = regexp.MustCompile(`^(?:>\s?)+`)
 	listItem   = regexp.MustCompile(`^(?:[-*+]|\d+[.)])\s`)
+	fenceRun   = regexp.MustCompile("^(?:`{3,}|~{3,})")
 	sentenceAt = regexp.MustCompile(`[.!?](\s+)[A-Z0-9"]`)
 	// A line that starts its own block. Any other line that is not blank
 	// continues the paragraph before it, because GitHub joins wrapped lines.
@@ -208,7 +209,7 @@ func problems(body, template string) []string {
 	var paragraphs [][]part
 	joins, quoted, inList, indented := false, false, false, false
 	code := 0
-	fence, fenceLine := "", 0
+	fence, fenceLine := "", 0 // the opening run of the open fence
 	blank := true
 
 	for index, raw := range strings.Split(body, "\n") {
@@ -219,8 +220,11 @@ func problems(body, template string) []string {
 		afterBlank := blank
 		blank = trimmed == ""
 
+		// A fence closes on a run of its own mark at least as long as the run
+		// that opened it, with nothing after the run.
 		if fence != "" {
-			if strings.HasPrefix(trimmed, fence) {
+			if run := fenceRun.FindString(trimmed); run != "" && run[0] == fence[0] &&
+				len(run) >= len(fence) && strings.TrimSpace(trimmed[len(run):]) == "" {
 				fence = ""
 			}
 			continue
@@ -239,11 +243,13 @@ func problems(body, template string) []string {
 			joins, quoted = false, false
 			continue
 		}
-		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
+		// A backtick fence has no backtick after its run, or GitHub shows prose.
+		if run := fenceRun.FindString(trimmed); run != "" &&
+			(run[0] == '~' || !strings.Contains(trimmed[len(run):], "`")) {
 			if code++; code > 1 {
 				report("a second command or code block; name at most one")
 			}
-			fence, fenceLine = trimmed[:3], at
+			fence, fenceLine = run, at
 			joins, quoted = false, false
 			continue
 		}

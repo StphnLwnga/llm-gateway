@@ -15,14 +15,16 @@ To check a body, run `go run ./tools/prbody <file>` from the repo root.
 ## Test plan
 
 - [x] This body passes, and the empty template passes.
-- [x] A body with drift gives exactly its 17 problems, line by line.
+- [x] A body with drift gives exactly its 18 problems, line by line.
+- [x] A milestone number and a decision number are each a plan code.
 - [x] A template line passes, and a file path after it is a problem.
 - [x] A second code block is a problem, with backticks, tildes or an indent. An indented line in a list item is not a code block.
 - [x] A code block that is not closed is a problem, because it hides the text after it.
+- [x] A fence closes only on a run of its mark that is as long as its first run, or longer. A run of backticks with a backtick after it is not a fence.
 - [x] A sentence over three lines counts as one. Two quote lines count as one sentence, and the quote marks are not words.
 - [x] The tool exits with 1 when it finds a problem and with 2 when it has no file.
 - [x] The old bodies of two earlier pull requests give 4 and 17 problems.
-- [x] The checks before every commit pass on Go 1.26.10: 183 tests and 224 subtests in 18 packages, 0 lint issues, 0 vulnerabilities.
+- [x] The checks before every commit pass on Go 1.26.10: 185 tests and 224 subtests in 18 packages, 0 lint issues, 0 vulnerabilities.
 
 ## Docs
 
