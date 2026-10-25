@@ -40,8 +40,13 @@ var rules = []rule{
 		"a contraction",
 	},
 	{regexp.MustCompile(`Generated with|claude\.ai/code`), "the tool footer or a session link"},
-	{regexp.MustCompile(`(?i)^(?:co-authored-by|claude-session):`), "a commit trailer; a body has none"},
 }
+
+// A trailer is a trailer after quote marks, a list marker and a check box,
+// so "> - [x] Co-Authored-By:" is one too.
+var trailer = regexp.MustCompile(`(?i)^(?:>\s?)*\s*(?:(?:[-*+]|\d+[.)])\s+)?(?:\[[ x]\]\s+)?(?:co-authored-by|claude-session):`)
+
+func isTrailer(s string) bool { return trailer.MatchString(strings.TrimSpace(s)) }
 
 // Code-like words outside backticks: file names, camelCase, PascalCase,
 // snake_case, UPPER_SNAKE, schema.table, package.Name and migration names.
@@ -73,6 +78,7 @@ var (
 	marker     = regexp.MustCompile(`^#+ |^(?:[-*+]|\d+[.)]) (?:\[ \] )?`)
 	quoteMark  = regexp.MustCompile(`^(?:>\s?)+`)
 	listItem   = regexp.MustCompile(`^(?:[-*+]|\d+[.)])\s`)
+	itemStart  = regexp.MustCompile(`^[ \t]*(?:[-*+]|\d+[.)])[ \t]+`)
 	fenceRun   = regexp.MustCompile("^(?:`{3,}|~{3,})")
 	sentenceAt = regexp.MustCompile(`[.!?](\s+)[A-Z0-9"]`)
 	// A line that starts its own block. Any other line that is not blank
@@ -194,8 +200,21 @@ func identifierWords(prose string) []string {
 	return words
 }
 
-func isIndented(raw string) bool {
-	return strings.HasPrefix(raw, "    ") || strings.HasPrefix(raw, "\t")
+// indent is the width of the spaces and tabs at the start of s, with a tab
+// stop at each fourth column.
+func indent(s string) int {
+	w := 0
+	for _, c := range s {
+		switch c {
+		case ' ':
+			w++
+		case '\t':
+			w += 4 - w%4
+		default:
+			return w
+		}
+	}
+	return w
 }
 
 type problem struct {
@@ -209,7 +228,7 @@ func problems(body, template string) []string {
 	var found []problem
 	var paragraphs [][]part
 	joins, quoted, inList, indented := false, false, false, false
-	code := 0
+	code, itemText, codeIndent := 0, 0, 0
 	fence, fenceLine := "", 0 // the opening run of the open fence
 	blank := true
 
@@ -222,30 +241,45 @@ func problems(body, template string) []string {
 		blank = trimmed == ""
 
 		// A fence closes on a run of its own mark at least as long as the run
-		// that opened it, with nothing after the run.
+		// that opened it, with nothing after the run. A trailer in code is
+		// still a trailer.
 		if fence != "" {
 			if run := fenceRun.FindString(trimmed); run != "" && run[0] == fence[0] &&
 				len(run) >= len(fence) && strings.TrimSpace(trimmed[len(run):]) == "" {
 				fence = ""
+			} else if isTrailer(raw) {
+				report("a commit trailer; a body has none")
 			}
 			continue
 		}
-		if indented && (blank || isIndented(raw)) {
+		if indented && (blank || indent(raw) >= codeIndent) {
+			if isTrailer(raw) {
+				report("a commit trailer; a body has none")
+			}
 			continue
 		}
 		indented = false
-		// An indented block after a blank line is code, unless it continues
-		// a list item.
-		if afterBlank && !inList && !blank && isIndented(raw) {
-			indented = true
+		// In a list item, the indent counts from the start of the item text.
+		base := 0
+		if inList {
+			base = itemText
+		}
+		// A block four spaces past that start, after a blank line, is code.
+		if afterBlank && !blank && indent(raw) >= base+4 {
+			indented, codeIndent = true, base+4
 			if code++; code > 1 {
 				report("a second command or code block; name at most one")
+			}
+			if isTrailer(raw) {
+				report("a commit trailer; a body has none")
 			}
 			joins, quoted = false, false
 			continue
 		}
 		// A backtick fence has no backtick after its run, or GitHub shows prose.
-		if run := fenceRun.FindString(trimmed); run != "" &&
+		// A fence has at most three spaces of indent past that start. A line
+		// with more cannot open one, so it continues the paragraph.
+		if run := fenceRun.FindString(trimmed); run != "" && indent(raw) <= base+3 &&
 			(run[0] == '~' || !strings.Contains(trimmed[len(run):], "`")) {
 			if code++; code > 1 {
 				report("a second command or code block; name at most one")
@@ -271,6 +305,18 @@ func problems(body, template string) []string {
 		switch {
 		case listItem.MatchString(line):
 			inList = true
+			// The item text starts after the indent, the marker and its spaces.
+			item := raw
+			if isQuote {
+				item = line
+			}
+			item = itemStart.FindString(item)
+			itemText = indent(strings.Map(func(r rune) rune {
+				if r == '\t' {
+					return r
+				}
+				return ' '
+			}, item))
 		case strings.HasPrefix(line, "#"), afterBlank && raw == strings.TrimLeft(raw, " \t"):
 			inList = false
 		}
@@ -289,6 +335,9 @@ func problems(body, template string) []string {
 			if r.pattern.MatchString(line) {
 				report(r.problem)
 			}
+		}
+		if isTrailer(line) {
+			report("a commit trailer; a body has none")
 		}
 
 		// An identifier goes only where the reader must type or find it, so

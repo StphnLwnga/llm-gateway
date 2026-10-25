@@ -104,6 +104,28 @@ func TestTheFooterASessionLinkAndATrailerAreProblems(t *testing.T) {
 	})
 }
 
+func TestATrailerInCodeAfterAListMarkerOrInAQuoteIsAProblem(t *testing.T) {
+	body := lines(
+		"Intro.",
+		"",
+		"    Co-Authored-By: Someone",
+		"",
+		"- Co-Authored-By: Someone",
+		"> - [x] claude-session: a session",
+		"",
+		"```",
+		"Co-authored-by: Someone",
+		"```",
+	)
+	expect(t, problems(body, ""), []string{
+		"line 3: a commit trailer; a body has none",
+		"line 5: a commit trailer; a body has none",
+		"line 6: a commit trailer; a body has none",
+		"line 8: a second command or code block; name at most one",
+		"line 9: a commit trailer; a body has none",
+	})
+}
+
 func TestTemplateLinesPassAndTheTextAfterThemIsChecked(t *testing.T) {
 	tmpl := template(t)
 	line := "- [x] README or docs/ updated in this PR for any change to routes, settings, packages, behavior or measurements."
@@ -131,6 +153,66 @@ func TestTildeFencesAndIndentedBlocksAreCodeBlocks(t *testing.T) {
 	// Inside a list item, an indented line continues the item.
 	expect(t, problems("- The first item.\n\n    It goes on with tenant_id.\n\n```\nmake up\n```", ""), []string{
 		`line 3: "tenant_id": an identifier in the prose; say what it is`,
+	})
+}
+
+func TestAFenceWithFourSpacesOfIndentIsAFenceOnlyInAListItem(t *testing.T) {
+	// After a paragraph, the indented fence continues the paragraph, so the
+	// lines after it are prose.
+	body := lines(
+		"The gateway stays the same.",
+		"    ```",
+		"It does not change — tenant_id S03 and it's short.",
+		"```",
+		"make up",
+		"```",
+	)
+	expect(t, problems(body, ""), []string{
+		"line 3: an em or en dash",
+		"line 3: a plan code",
+		"line 3: a contraction",
+		`line 3: "tenant_id": an identifier in the prose; say what it is`,
+	})
+	list := lines(
+		"- The first item.",
+		"",
+		"    ```",
+		"    make up",
+		"    ```",
+		"",
+		"After the list it's prose.",
+	)
+	expect(t, problems(list, ""), []string{"line 7: a contraction"})
+}
+
+func TestInAListItemTheIndentCountsFromTheItemText(t *testing.T) {
+	// A fence four spaces past the item text is prose.
+	fence := lines(
+		"- An item with text.",
+		"      ```",
+		"  It doesn't pass, S16.",
+		"  ```",
+		"  It isn't prose.",
+		"  ```",
+	)
+	expect(t, problems(fence, ""), []string{
+		"line 3: a plan code",
+		"line 3: a contraction",
+	})
+	// After a blank line, a line four spaces past the item text is code.
+	code := lines(
+		"1. An item with text.",
+		"",
+		"       ```",
+		"   It doesn't pass, S16.",
+		"   ```",
+		"   make up",
+		"   ```",
+	)
+	expect(t, problems(code, ""), []string{
+		"line 4: a plan code",
+		"line 4: a contraction",
+		"line 5: a second command or code block; name at most one",
 	})
 }
 
