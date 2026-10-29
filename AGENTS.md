@@ -9,7 +9,8 @@ design is in `docs/design.md` and the decisions are in `docs/adr/`.
 
 ## How work is done
 
-- One branch and one pull request per milestone, named `feat/sNN-<name>`.
+- One branch and one pull request per milestone, named `feat/gw-NN-sNN-<name>`
+  after its tracking issue, for example `feat/gw-6-s04-router`.
 - Merge commits only. No squash, no rebase merge.
 - The README and the pages in `docs/` are updated in the same pull request as
   the code they describe.
